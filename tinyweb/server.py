@@ -17,12 +17,14 @@ log = logging.getLogger('WEB')
 
 type_gen = type((lambda: (yield))())
 
-# with v1.21.0 release all u-modules where renamend without the u prefix 
+# with v1.21.0 release all u-modules where renamend without the u prefix
 # -> uasyncio no named asyncio
 # asyncio v3 is shipped with MicroPython 1.13, and contains some subtle
 # but breaking changes. See also https://github.com/peterhinch/micropython-async/blob/master/v3/README.md
-IS_ASYNCIO_V3 = hasattr(asyncio, "__version__") and asyncio.__version__ >= (3,)
+IS_ASYNCIO_V3 = hasattr(asyncio, "__version__") and asyncio.__version__ >= (3,) and asyncio.__version__ < (4,)
 
+if not IS_ASYNCIO_V3:
+    log.warning("tinyweb expects asyncio v3")
 
 def urldecode_plus(s):
     """Decode urlencoded string (including '+' char).
@@ -392,6 +394,9 @@ class webserver:
         self.explicit_url_map = {}
         self.catch_all_handler = None
         self.parameterized_url_map = {}
+        # When 'self.accepts_new_conns' is cleared, stop accepting new connections.
+        # The flag is `.set()` whenever a connection is closed.
+        self.accepts_new_conns = asyncio.ThreadSafeFlag()
         # Currently opened connections
         self.conns = {}
         # Statistics
@@ -495,10 +500,10 @@ class webserver:
                 pass
         finally:
             await writer.aclose()
-            # Max concurrency support -
-            # if queue is full schedule resume of TCP server task
-            if len(self.conns) == self.max_concurrency:
-                self.loop.create_task(self._server_coro)
+            # Max concurrency support - if we're not accepting connections currently,
+            # resume accepting.
+            self.accepts_new_conns.set()
+
             # Delete connection, using socket as a key
             del self.conns[id(writer.s)]
 
@@ -644,12 +649,19 @@ class webserver:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(addr)
         sock.listen(backlog)
+        self.accepts_new_conns.set() # initially, accept
         try:
             while True:
-                if IS_ASYNCIO_V3:
-                    yield asyncio.core._io_queue.queue_read(sock)
-                else:
-                    yield asyncio.IORead(sock)
+
+                # In case of max concurrency reached - temporary pause server:
+                # 1. backlog must be greater than max_concurrency, otherwise
+                #    client will get "Connection Reset"
+                # 2. Server task will be resumed whenever one active connection finished
+                if len(self.conns) >= self.max_concurrency:
+                    self.accepts_new_conns.clear()
+
+                await self.accepts_new_conns.wait()
+                yield asyncio.core._io_queue.queue_read(sock)
                 csock, caddr = sock.accept()
                 csock.setblocking(False)
                 # Start handler / keep it in the map - to be able to
@@ -658,15 +670,8 @@ class webserver:
                 hid = id(csock)
                 handler = self._handler(asyncio.StreamReader(csock),
                                         asyncio.StreamWriter(csock, {}))
-                self.conns[hid] = handler
-                self.loop.create_task(handler)
-                # In case of max concurrency reached - temporary pause server:
-                # 1. backlog must be greater than max_concurrency, otherwise
-                #    client will got "Connection Reset"
-                # 2. Server task will be resumed whenever one active connection finished
-                if len(self.conns) == self.max_concurrency:
-                    # Pause
-                    yield False
+                self.conns[hid] = self.loop.create_task(handler)
+
         except asyncio.CancelledError:
             return
         finally:
@@ -680,13 +685,13 @@ class webserver:
             port - port to listen on. By default - 8081
             loop_forever - run loo.loop_forever(), otherwise caller must run it by itself.
         """
-        self._server_coro = self._tcp_server(host, port, self.backlog)
-        self.loop.create_task(self._server_coro)
+        server_coro = self._tcp_server(host, port, self.backlog)
+        self._server_task = self.loop.create_task(server_coro)
         if loop_forever:
             self.loop.run_forever()
 
     def shutdown(self):
         """Gracefully shutdown Web Server"""
-        asyncio.cancel(self._server_coro)
-        for hid, coro in self.conns.items():
-            asyncio.cancel(coro)
+        self._server_task.cancel()
+        for hid, task in self.conns.items():
+            task.cancel()
