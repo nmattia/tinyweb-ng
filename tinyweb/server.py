@@ -119,7 +119,8 @@ class request:
             frags = line.split(b':', 1)
             if len(frags) != 2:
                 raise HTTPException(400)
-            if frags[0].lower() in save_headers:
+
+            if frags[0].lower() in [header.lower() for header in save_headers]:
                 self.headers[frags[0]] = frags[1].strip()
 
     async def read_parse_form_data(self):
