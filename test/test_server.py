@@ -74,19 +74,6 @@ class mockWriter():
     async def aclose(self):
         self.closed = True
 
-
-async def mock_wait_for(coro, timeout):
-    await coro
-
-
-def run_coro(coro):
-    # Mock wait_for() function with simple dummy
-    asyncio.wait_for = (lambda c, t: await c)
-    """Simple helper to run coroutine"""
-    for i in coro:
-        pass
-
-
 # Tests
 
 class Utils(unittest.TestCase):
@@ -135,7 +122,7 @@ class ServerParts(unittest.TestCase):
         for r in runs:
             try:
                 req = request(mockReader(r[0]))
-                run_coro(req.read_request_line())
+                asyncio.run(req.read_request_line())
                 self.assertEqual(r[1].encode(), req.method)
                 self.assertEqual(r[2].encode(), req.path)
                 if len(r) > 3:
@@ -145,7 +132,7 @@ class ServerParts(unittest.TestCase):
 
     def testRequestLineEmptyLinesBefore(self):
         req = request(mockReader(['\n', '\r\n', 'GET /?a=a HTTP/1.1']))
-        run_coro(req.read_request_line())
+        asyncio.run(req.read_request_line())
         self.assertEqual(b'GET', req.method)
         self.assertEqual(b'/', req.path)
         self.assertEqual(b'a=a', req.query_string)
@@ -163,24 +150,24 @@ class ServerParts(unittest.TestCase):
         for r in runs:
             with self.assertRaises(HTTPException):
                 req = request(mockReader(r))
-                run_coro(req.read_request_line())
+                asyncio.run(req.read_request_line())
 
     def testHeadersSimple(self):
         req = request(mockReader([HDR('Host: google.com'),
                                   HDRE]))
-        run_coro(req.read_headers([b'Host']))
+        asyncio.run(req.read_headers([b'Host']))
         self.assertEqual(req.headers, {b'Host': b'google.com'})
 
     def testHeadersSpaces(self):
         req = request(mockReader([HDR('Host:    \t    google.com   \t     '),
                                   HDRE]))
-        run_coro(req.read_headers([b'Host']))
+        asyncio.run(req.read_headers([b'Host']))
         self.assertEqual(req.headers, {b'Host': b'google.com'})
 
     def testHeadersEmptyValue(self):
         req = request(mockReader([HDR('Host:'),
                                   HDRE]))
-        run_coro(req.read_headers([b'Host']))
+        asyncio.run(req.read_headers([b'Host']))
         self.assertEqual(req.headers, {b'Host': b''})
 
     def testHeadersMultiple(self):
@@ -191,7 +178,7 @@ class ServerParts(unittest.TestCase):
         hdrs = {b'Host': b'google.com',
                 b'Junk': b'you    blah',
                 b'Content-type': b'file'}
-        run_coro(req.read_headers([b'Host', b'Junk', b'Content-type']))
+        asyncio.run(req.read_headers([b'Host', b'Junk', b'Content-type']))
         self.assertEqual(req.headers, hdrs)
 
     def testUrlFinderExplicit(self):
@@ -304,7 +291,7 @@ class ServerFull(unittest.TestCase):
                           HDRE])
         wrt = mockWriter()
         # "Send" request
-        run_coro(server_for_decorators._handler(rdr, wrt))
+        asyncio.run(server_for_decorators._handler(rdr, wrt))
         # Ensure that proper response "sent"
         expected = ['HTTP/1.0 200 MSG\r\n' +
                     'Content-Type: text/html\r\n\r\n',
@@ -320,7 +307,7 @@ class ServerFull(unittest.TestCase):
         # Re-register connection
         server_for_decorators.conns[id(1)] = None
         # "Send" request
-        run_coro(server_for_decorators._handler(rdr, wrt))
+        asyncio.run(server_for_decorators._handler(rdr, wrt))
         # Ensure that proper response "sent"
         expected = ['HTTP/1.0 200 MSG\r\n' +
                     'Content-Type: text/html\r\n\r\n',
@@ -333,7 +320,7 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(['GET /rest1/man1 HTTP/1.1\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(server_for_decorators._handler(rdr, wrt))
+        asyncio.run(server_for_decorators._handler(rdr, wrt))
         expected = ['HTTP/1.0 200 MSG\r\n'
                     'Access-Control-Allow-Origin: *\r\n' +
                     'Access-Control-Allow-Headers: *\r\n' +
@@ -348,7 +335,7 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(['GET /rest2/man2 HTTP/1.1\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(server_for_decorators._handler(rdr, wrt))
+        asyncio.run(server_for_decorators._handler(rdr, wrt))
         expected = ['HTTP/1.1 200 MSG\r\n' +
                     'Access-Control-Allow-Methods: GET\r\n' +
                     'Connection: close\r\n' +
@@ -378,7 +365,7 @@ class ServerFull(unittest.TestCase):
                           HDRE])
         wrt = mockWriter()
         server_for_catchall_decorator.conns[id(1)] = None
-        run_coro(server_for_catchall_decorator._handler(rdr, wrt))
+        asyncio.run(server_for_catchall_decorator._handler(rdr, wrt))
         expected = ['HTTP/1.0 200 MSG\r\n' +
                     'Content-Type: text/html\r\n\r\n',
                     'my404']
@@ -409,7 +396,7 @@ class ServerFull(unittest.TestCase):
                           HDRE])
         wrt = mockWriter()
         # "Send" request
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         # Ensure that proper response "sent"
         self.assertEqual(wrt.history, self.hello_world_history)
         self.assertTrue(wrt.closed)
@@ -422,7 +409,7 @@ class ServerFull(unittest.TestCase):
                           HDRE])
         wrt = mockWriter()
         # "Send" request
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         # Ensure that proper response "sent"
         exp = ['HTTP/1.0 302 MSG\r\n' +
                'Location: /blahblah\r\nContent-Length: 5\r\n\r\n',
@@ -438,7 +425,7 @@ class ServerFull(unittest.TestCase):
                           HDRE,
                           '12345'])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         # Check extracted POST body
         self.assertEqual(self.data, {})
 
@@ -454,7 +441,7 @@ class ServerFull(unittest.TestCase):
                           HDRE,
                           '{"a": "b"}'])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         # Check parsed POST body
         self.assertEqual(self.data, {'a': 'b'})
 
@@ -470,7 +457,7 @@ class ServerFull(unittest.TestCase):
                           HDRE,
                           'a=b&c=%20d'])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         # Check parsed POST body
         self.assertEqual(self.data, {'a': 'b', 'c': ' d'})
 
@@ -486,7 +473,7 @@ class ServerFull(unittest.TestCase):
                           HDRE,
                           'some junk'])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         # payload broken - HTTP 400 expected
         self.assertEqual(wrt.history, ['HTTP/1.0 400 MSG\r\n\r\n'])
 
@@ -503,7 +490,7 @@ class ServerFull(unittest.TestCase):
                           HDRE,
                           'some junk'])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         # payload broken - HTTP 400 expected
         self.assertEqual(wrt.history, ['HTTP/1.0 413 MSG\r\n\r\n'])
 
@@ -519,7 +506,7 @@ class ServerFull(unittest.TestCase):
                           HDRE])
         wrt = mockWriter()
         # "Send" request
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         # Ensure that proper response "sent"
         expected = ['HTTP/1.0 200 MSG\r\n' +
                     'Content-Type: text/html\r\n\r\n',
@@ -537,7 +524,7 @@ class ServerFull(unittest.TestCase):
                           HDRE])
         # "Send" request
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         self.assertTrue(self.dummy_called)
         # Check for headers - only 2 of 3 should be collected, others - ignore
         hdrs = {b'H1': b'blah.com',
@@ -553,7 +540,7 @@ class ServerFull(unittest.TestCase):
                           HDRE])
         # "Send" GET request, by default GET is enabled
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         self.assertEqual(wrt.history, self.hello_world_history)
         self.assertTrue(wrt.closed)
 
@@ -563,7 +550,7 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(['GET /post_only HTTP/1.1\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         # Hanlder should not be called - method not allowed
         self.assertFalse(self.dummy_called)
         exp = ['HTTP/1.0 405 MSG\r\n\r\n']
@@ -578,7 +565,7 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(['OPTIONS / HTTP/1.0\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
 
         exp = ['HTTP/1.0 200 MSG\r\n' +
                'Access-Control-Allow-Headers: *\r\n'
@@ -594,7 +581,7 @@ class ServerFull(unittest.TestCase):
                           HDR('Host: blah.com'),
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         exp = ['HTTP/1.0 404 MSG\r\n\r\n']
         self.assertEqual(wrt.history, exp)
         # Connection must be closed
@@ -606,7 +593,7 @@ class ServerFull(unittest.TestCase):
                           HDR('Host: blah.com'),
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         exp = ['HTTP/1.0 400 MSG\r\n\r\n']
         self.assertEqual(wrt.history, exp)
         # Connection must be closed
@@ -678,7 +665,7 @@ class ServerResource(unittest.TestCase):
         rdr = mockReader(['OPTIONS / HTTP/1.0\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         exp = ['HTTP/1.0 200 MSG\r\n' +
                'Access-Control-Allow-Headers: *\r\n'
                'Content-Length: 0\r\n'
@@ -690,7 +677,7 @@ class ServerResource(unittest.TestCase):
         rdr = mockReader(['GET / HTTP/1.0\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         exp = ['HTTP/1.0 200 MSG\r\n' +
                'Access-Control-Allow-Origin: *\r\n'
                'Access-Control-Allow-Headers: *\r\n'
@@ -704,7 +691,7 @@ class ServerResource(unittest.TestCase):
         rdr = mockReader(['GET /param/123 HTTP/1.0\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         exp = ['HTTP/1.0 200 MSG\r\n' +
                'Access-Control-Allow-Origin: *\r\n'
                'Access-Control-Allow-Headers: *\r\n'
@@ -718,7 +705,7 @@ class ServerResource(unittest.TestCase):
         rdr = mockReader(['GET /args HTTP/1.0\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         exp = ['HTTP/1.0 200 MSG\r\n' +
                'Access-Control-Allow-Origin: *\r\n'
                'Access-Control-Allow-Headers: *\r\n'
@@ -732,7 +719,7 @@ class ServerResource(unittest.TestCase):
         rdr = mockReader(['GET /gen HTTP/1.0\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         exp = ['HTTP/1.1 200 MSG\r\n' +
                'Access-Control-Allow-Methods: GET\r\n' +
                'Connection: close\r\n' +
@@ -761,7 +748,7 @@ class ServerResource(unittest.TestCase):
                           HDRE,
                           '{"body": "body1"}'])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         exp = ['HTTP/1.0 200 MSG\r\n' +
                'Access-Control-Allow-Origin: *\r\n'
                'Access-Control-Allow-Headers: *\r\n'
@@ -775,7 +762,7 @@ class ServerResource(unittest.TestCase):
         rdr = mockReader(['PUT / HTTP/1.0\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         exp = ['HTTP/1.0 405 MSG\r\n\r\n']
         self.assertEqual(wrt.history, exp)
 
@@ -783,7 +770,7 @@ class ServerResource(unittest.TestCase):
         rdr = mockReader(['PUT /negative HTTP/1.0\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         exp = ['HTTP/1.0 500 MSG\r\n\r\n']
         self.assertEqual(wrt.history, exp)
 
@@ -791,7 +778,7 @@ class ServerResource(unittest.TestCase):
         rdr = mockReader(['DELETE /negative HTTP/1.0\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
         self.assertEqual(wrt.history, [])
 
 
@@ -828,7 +815,7 @@ class StaticContent(unittest.TestCase):
         rdr = mockReader(['GET / HTTP/1.0\r\n',
                           HDRE])
         wrt = mockWriter()
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
 
         exp = ['HTTP/1.0 200 MSG\r\n' +
                'Cache-Control: max-age=100, public\r\n'
@@ -848,7 +835,7 @@ class StaticContent(unittest.TestCase):
 
         # Intentionally delete file before request
         delete_file(self.tempfn)
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
 
         exp = ['HTTP/1.0 404 MSG\r\n\r\n']
         self.assertEqual(wrt.history, exp)
@@ -861,12 +848,18 @@ class StaticContent(unittest.TestCase):
         # tell mockWrite to raise error during send()
         wrt = mockWriter(generate_expection=OSError(errno.ECONNRESET))
 
-        run_coro(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handler(rdr, wrt))
 
         # there should be no payload due to connected reset
         self.assertEqual(wrt.history, [])
         self.assertTrue(wrt.closed)
 
-
 if __name__ == '__main__':
-    unittest.main()
+    res = unittest.main()
+    if len(res.errors) > 0:
+        print("got errors")
+        raise Exception("errors")
+
+    if len(res.failures) > 0:
+        print("got failures")
+        raise Exception("failures")
