@@ -1,0 +1,11 @@
+[tool.mypy]
+files=["tinyweb"]
+python_version = "3.8" # micropython is ~3.5 but mypy doesn't support that
+
+[[tool.mypy.overrides]]
+module = ["ujson", "uos", "uerrno", "usocket"]
+ignore_missing_imports = true
+
+
+[tool.ruff]
+include = [ "tinyweb/server.py" ]
