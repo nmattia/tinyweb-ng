@@ -8,6 +8,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Run linters
+        run: |
+          pip3 install ruff==0.12.1 mypy==1.16.1
+          mypy
+          ruff check
+
       - name: Run tests
         run: |
           docker build . -t tinyweb
