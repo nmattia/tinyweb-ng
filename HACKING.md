@@ -1,25 +1,16 @@
 # Hacking on tinyweb
 
-Run the typechecker
+Run the linters
 
 ```bash
-pip3 install mypy==1.16.1
-mypy
+pip3 install mypy==1.16.1 ruff==0.12.1
+make lint
 ```
 
-Run the tests:
+Prepare output and run tests:
 
 ```
-docker build . -t tinyweb # or podman
-docker run --rm \
-  -v ./test:/srv/tinyweb/test \
-  -v ./tinyweb:/root/.micropython/lib/tinyweb \
-  tinyweb micropython /srv/tinyweb/test/test_server.py
-```
-
-Run the linter
-
-```bash
-pip3 install ruff==0.12.1
-ruff check && ruff format
+pip3 install strip-hints==0.1.13
+make build
+make test
 ```

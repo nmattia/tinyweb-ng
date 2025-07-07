@@ -10,7 +10,7 @@ import unittest
 import uos as os
 import uerrno as errno
 import uasyncio as asyncio
-from tinyweb import webserver
+from tinyweb.server import webserver
 from tinyweb.server import urldecode_plus, parse_query_string
 from tinyweb.server import request, HTTPException
 
