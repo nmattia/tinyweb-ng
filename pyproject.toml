@@ -1,6 +1,6 @@
 [tool.mypy]
 files=["tinyweb"]
-python_version = "3.8" # micropython is ~3.5 but mypy doesn't support that
+python_version = "3.12" # micropython is ~3.5 but mypy doesn't support that
 
 [[tool.mypy.overrides]]
 module = ["ujson", "uos", "uerrno", "usocket"]
