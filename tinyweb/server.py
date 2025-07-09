@@ -9,9 +9,13 @@ import asyncio
 import ujson as json
 import gc
 import uos as os
-import sys
 import uerrno as errno
 
+# TYPING_START
+# typing related lines that get stripped during build
+# (micropython doesn't support them)
+from typing import Callable
+# TYPING_END
 
 log = logging.getLogger("WEB")
 
@@ -76,11 +80,13 @@ class request:
     """HTTP Request class"""
 
     def __init__(self, _reader):
-        self.reader = _reader
+        self.handler: None | Callable = None
+        self.reader: asyncio.StreamReader = _reader
         self.headers = {}
         self.method = b""
         self.path = b""
         self.query_string = b""
+        self.params: dict = {}
 
     async def read_request_line(self):
         """Read and parse first line (AKA HTTP Request Line).
@@ -147,7 +153,9 @@ class request:
             # Unknown content type, return unparsed, raw data
             return {}
         size = int(self.headers[b"Content-Length"])
-        if size > self.params["max_body_size"] or size < 0:
+        # NOTE: params["max_body_size"] might not be set
+        max_body_size = self.params.get("max_body_size")
+        if size < 0 or max_body_size is not None and size > max_body_size:
             raise HTTPException(413)
         data = await self.reader.readexactly(size)
         # Use only string before ';', e.g:
@@ -167,11 +175,12 @@ class response:
     """HTTP Response class"""
 
     def __init__(self, _writer):
-        self.writer = _writer
+        self.writer: asyncio.StreamWriter = _writer
         self.send = _writer.awrite
         self.code = 200
         self.version = "1.0"
         self.headers = {}
+        self.params: dict = {}
 
     async def _send_headers(self):
         """Compose and send:
@@ -365,12 +374,13 @@ async def restful_resource_handler(req, resp, param=None):
         resp.add_access_control_headers()
         await resp._send_headers()
         # Drain generator
-        for chunk in res:
-            chunk_len = len(chunk.encode("utf-8"))
-            await resp.send("{:x}\r\n".format(chunk_len))
-            await resp.send(chunk)
-            await resp.send("\r\n")
-            gc.collect()
+        if res:
+            for chunk in res:
+                chunk_len = len(chunk.encode("utf-8"))
+                await resp.send("{:x}\r\n".format(chunk_len))
+                await resp.send(chunk)
+                await resp.send("\r\n")
+                gc.collect()
         await resp.send("0\r\n\r\n")
     else:
         if isinstance(res, tuple):
@@ -481,6 +491,9 @@ class webserver:
             if req.method not in req.params["methods"]:
                 raise HTTPException(405)
 
+            if not req.handler:
+                raise HTTPException(500)
+
             # Handle URL
             gc.collect()
             if hasattr(req, "_param"):
@@ -513,9 +526,6 @@ class webserver:
             log.exception(f"Unhandled exception in user's method. Original error: {e}")
             try:
                 await resp.error(500)
-                # Send exception info if desired
-                if self.debug:
-                    sys.print_exception(e, resp.writer.s)
             except Exception as e:
                 pass
         finally:
@@ -552,10 +562,10 @@ class webserver:
             "allowed_access_control_origins": "*",
         }
         params.update(kwargs)
-        params["allowed_access_control_methods"] = ", ".join(params["methods"])
+        params["allowed_access_control_methods"] = ", ".join(params["methods"])  # type: ignore
         # Convert methods/headers to bytestring
-        params["methods"] = [x.encode().upper() for x in params["methods"]]
-        params["save_headers"] = [x.encode().lower() for x in params["save_headers"]]
+        params["methods"] = [x.encode().upper() for x in params["methods"]]  # type: ignore
+        params["save_headers"] = [x.encode().lower() for x in params["save_headers"]]  # type: ignore
         # If URL has a parameter
         if url.endswith(">"):
             idx = url.rfind("<")
