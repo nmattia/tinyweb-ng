@@ -11,7 +11,6 @@ import gc
 import uos as os
 import sys
 import uerrno as errno
-import usocket as socket
 
 
 log = logging.getLogger("WEB")
@@ -392,24 +391,19 @@ async def restful_resource_handler(req, resp, param=None):
 
 
 class webserver:
-    def __init__(self, request_timeout=3, max_concurrency=3, backlog=16, debug=False):
+    def __init__(self, request_timeout=3, backlog=16, debug=False):
         """Tiny Web Server class.
         Keyword arguments:
             request_timeout - Time for client to send complete request
                               after that connection will be closed.
-            max_concurrency - How many connections can be processed concurrently.
-                              It is very important to limit this number because of
-                              memory constrain.
-                              Default value depends on platform
-            backlog         - Parameter to socket.listen() function. Defines size of
-                              pending to be accepted connections queue.
-                              Must be greater than max_concurrency
+            backlog         - Parameter to asyncio.start_server() function.
+                              Defines size of pending to be accepted connections
+                              queue.
             debug           - Whether send exception info (text + backtrace)
                               to client together with HTTP 500 or not.
         """
         self.loop = asyncio.get_event_loop()
         self.request_timeout = request_timeout
-        self.max_concurrency = max_concurrency
         self.backlog = backlog
         self.debug = debug
         self.explicit_url_map = {}
@@ -682,45 +676,6 @@ class webserver:
 
         return _resource
 
-    async def _tcp_server(self, host, port, backlog):
-        """TCP Server implementation.
-        Opens socket for accepting connection and
-        creates task for every new accepted connection
-        """
-        addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0][-1]
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setblocking(False)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(addr)
-        sock.listen(backlog)
-        self.accepts_new_conns.set()  # initially, accept
-        try:
-            while True:
-                # In case of max concurrency reached - temporary pause server:
-                # 1. backlog must be greater than max_concurrency, otherwise
-                #    client will get "Connection Reset"
-                # 2. Server task will be resumed whenever one active connection finished
-                if len(self.conns) >= self.max_concurrency:
-                    self.accepts_new_conns.clear()
-
-                await self.accepts_new_conns.wait()
-                yield asyncio.core._io_queue.queue_read(sock)
-                csock, caddr = sock.accept()
-                csock.setblocking(False)
-                # Start handler / keep it in the map - to be able to
-                # shutdown gracefully - by close all connections
-                self.processed_connections += 1
-                hid = id(csock)
-                handler = self._handler(
-                    asyncio.StreamReader(csock), asyncio.StreamWriter(csock, {})
-                )
-                self.conns[hid] = self.loop.create_task(handler)
-
-        except asyncio.CancelledError:
-            return
-        finally:
-            sock.close()
-
     def run(self, host="127.0.0.1", port=8081, loop_forever=True):
         """Run Web Server. By default it runs forever.
 
@@ -729,7 +684,9 @@ class webserver:
             port - port to listen on. By default - 8081
             loop_forever - run loo.loop_forever(), otherwise caller must run it by itself.
         """
-        server_coro = self._tcp_server(host, port, self.backlog)
+        server_coro = asyncio.start_server(
+            self._handler, host, port, backlog=self.backlog
+        )
         self._server_task = self.loop.create_task(server_coro)
         if loop_forever:
             self.loop.run_forever()
