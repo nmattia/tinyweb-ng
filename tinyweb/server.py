@@ -412,6 +412,7 @@ class webserver:
             debug           - Whether send exception info (text + backtrace)
                               to client together with HTTP 500 or not.
         """
+        self.server: asyncio.Server | None = None
         self.loop = asyncio.get_event_loop()
         self.request_timeout = request_timeout
         self.backlog = backlog
@@ -419,13 +420,6 @@ class webserver:
         self.explicit_url_map = {}
         self.catch_all_handler = None
         self.parameterized_url_map = {}
-        # When 'self.accepts_new_conns' is cleared, stop accepting new connections.
-        # The flag is `.set()` whenever a connection is closed.
-        self.accepts_new_conns = asyncio.ThreadSafeFlag()
-        # Currently opened connections
-        self.conns = {}
-        # Statistics
-        self.processed_connections = 0
 
     def _find_url_handler(self, req):
         """Helper to find URL handler.
@@ -530,12 +524,6 @@ class webserver:
                 pass
         finally:
             await writer.aclose()
-            # Max concurrency support - if we're not accepting connections currently,
-            # resume accepting.
-            self.accepts_new_conns.set()
-
-            # Delete connection, using socket as a key
-            del self.conns[id(writer.s)]
 
     def add_route(self, url, f, **kwargs):
         """Add URL to function mapping.
@@ -694,15 +682,13 @@ class webserver:
             port - port to listen on. By default - 8081
             loop_forever - run loo.loop_forever(), otherwise caller must run it by itself.
         """
-        server_coro = asyncio.start_server(
+        self.server = asyncio.run(asyncio.start_server(
             self._handler, host, port, backlog=self.backlog
-        )
-        self._server_task = self.loop.create_task(server_coro)
+        ))
         if loop_forever:
             self.loop.run_forever()
 
     def shutdown(self):
         """Gracefully shutdown Web Server"""
-        self._server_task.cancel()
-        for hid, task in self.conns.items():
-            task.cancel()
+        if self.server:
+            self.server.close()
