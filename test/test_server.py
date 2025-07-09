@@ -276,14 +276,11 @@ class ServerFull(unittest.TestCase):
     def setUp(self):
         self.dummy_called = False
         self.data = {}
-        # "Register" one connection into map for dedicated decor server
-        server_for_decorators.conns[id(1)] = None
         self.hello_world_history = ['HTTP/1.0 200 MSG\r\n' +
                                     'Content-Type: text/html\r\n\r\n',
                                     '<html><h1>Hello world</h1></html>']
         # Create one more server - to simplify bunch of tests
         self.srv = webserver()
-        self.srv.conns[id(1)] = None
 
     def testRouteDecorator1(self):
         """Test @.route() decorator"""
@@ -305,8 +302,6 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(['GET /uid2/man2 HTTP/1.1\r\n',
                           HDRE])
         wrt = mockWriter()
-        # Re-register connection
-        server_for_decorators.conns[id(1)] = None
         # "Send" request
         asyncio.run(server_for_decorators._handler(rdr, wrt))
         # Ensure that proper response "sent"
@@ -365,7 +360,6 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(['GET /this/is/an/invalid/url HTTP/1.1\r\n',
                           HDRE])
         wrt = mockWriter()
-        server_for_catchall_decorator.conns[id(1)] = None
         asyncio.run(server_for_catchall_decorator._handler(rdr, wrt))
         expected = ['HTTP/1.0 200 MSG\r\n' +
                     'Content-Type: text/html\r\n\r\n',
@@ -546,7 +540,6 @@ class ServerFull(unittest.TestCase):
         self.assertTrue(wrt.closed)
 
         # "Send" GET request to POST only location
-        self.srv.conns[id(1)] = None
         self.dummy_called = False
         rdr = mockReader(['GET /post_only HTTP/1.1\r\n',
                           HDRE])
@@ -654,7 +647,6 @@ class ServerResource(unittest.TestCase):
 
     def setUp(self):
         self.srv = webserver()
-        self.srv.conns[id(1)] = None
         self.srv.add_resource(ResourceGetPost, '/')
         self.srv.add_resource(ResourceGetParam, '/param/<user_id>')
         self.srv.add_resource(ResourceGetArgs, '/args', arg1=1, arg2=2)
@@ -787,7 +779,6 @@ class StaticContent(unittest.TestCase):
 
     def setUp(self):
         self.srv = webserver()
-        self.srv.conns[id(1)] = None
         self.tempfn = '__tmp.html'
         self.ctype = None
         self.etype = None
