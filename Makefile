@@ -11,7 +11,7 @@ build: $(OUTFILE)
 $(OUTFILE): ./tinyweb/server.py
 	mkdir -p $(OUTDIR)/tinyweb
 	strip-hints ./tinyweb/server.py -o $(OUTFILE)
-	@sed -i.bak '/# TYPING_START/,/# TYPING_END/d' $(OUTFILE)
+	@sed -i.bak '/# TYPING_START/,/# TYPING_END/ s/.*//' $(OUTFILE)
 	@rm -f $(OUTFILE).bak
 
 container: Dockerfile

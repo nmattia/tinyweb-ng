@@ -14,7 +14,20 @@ import uerrno as errno
 # TYPING_START
 # typing related lines that get stripped during build
 # (micropython doesn't support them)
-from typing import Callable
+from typing import Callable, TypedDict
+
+type Handler = Callable
+Params = TypedDict(
+    "Params",
+    {
+        "max_body_size": int,
+        "methods": list[bytes],
+        "save_headers": list[bytes],
+        "allowed_access_control_headers": str,
+        "allowed_access_control_origins": str,
+        "allowed_access_control_methods": str,
+    },
+)
 # TYPING_END
 
 log = logging.getLogger("WEB")
@@ -83,10 +96,17 @@ class request:
         self.handler: None | Callable = None
         self.reader: asyncio.StreamReader = _reader
         self.headers = {}
-        self.method = b""
-        self.path = b""
+        self.method: bytes = b""
+        self.path: bytes = b""
         self.query_string = b""
-        self.params: dict = {}
+        self.params: Params = {
+            "methods": [b"GET"],
+            "save_headers": [],
+            "max_body_size": 1024,
+            "allowed_access_control_headers": "*",
+            "allowed_access_control_origins": "*",
+            "allowed_access_control_methods": "GET",
+        }
 
     async def read_request_line(self):
         """Read and parse first line (AKA HTTP Request Line).
@@ -154,7 +174,7 @@ class request:
             return {}
         size = int(self.headers[b"Content-Length"])
         # NOTE: params["max_body_size"] might not be set
-        max_body_size = self.params.get("max_body_size")
+        max_body_size = self.params["max_body_size"]
         if size < 0 or max_body_size is not None and size > max_body_size:
             raise HTTPException(413)
         data = await self.reader.readexactly(size)
@@ -417,17 +437,52 @@ class webserver:
         self.request_timeout = request_timeout
         self.backlog = backlog
         self.debug = debug
-        self.explicit_url_map = {}
+        # (method, path, handler, params)
+        self.explicit_url_map: list[tuple[bytes, bytes, Handler, Params]] = []
         self.catch_all_handler = None
         self.parameterized_url_map = {}
 
-    def _find_url_handler(self, req):
+    def _find_url_handler(self, req) -> tuple[Handler, Params] | HTTPException:
         """Helper to find URL handler.
-        Returns tuple of (function, opts, param) or (None, None) if not found.
+        Returns tuple of (function, params) or (None, None) if not found.
         """
+
+        async def handle_options(req, resp):
+            resp.add_access_control_headers()
+            # Since we support only HTTP 1.0 - it is important
+            # to tell browser that there is no payload expected
+            # otherwise some webkit based browsers (Chrome)
+            # treat this behavior as an error
+            resp.add_header("Content-Length", "0")
+            await resp._send_headers()
+            return
+
+        if req.method == b"OPTIONS":
+            params: Params = {
+                "methods": [b"GET"],
+                "save_headers": [],
+                "max_body_size": 1024,
+                "allowed_access_control_headers": "*",
+                "allowed_access_control_origins": "*",
+                "allowed_access_control_methods": "POST, PUT, DELETE",
+            }
+
+            return (handle_options, params)
+
+        # tracks whether there was an exact path match to differentiate
+        # between 404 and 405
+        path_matched = False
+
         # First try - lookup in explicit (non parameterized URLs)
-        if req.path in self.explicit_url_map:
-            return self.explicit_url_map[req.path]
+        for method, path, handler, params in self.explicit_url_map:
+            if method == req.method and path == req.path:
+                return (handler, params)
+
+            if path == req.path:
+                path_matched = True
+
+        # if req.path in self.explicit_url_map:
+        #    return self.explicit_url_map[req.path]
         # Second try - strip last path segment and lookup in another map
         idx = req.path.rfind(b"/") + 1
         path2 = req.path[:idx]
@@ -439,22 +494,28 @@ class webserver:
         if self.catch_all_handler:
             return self.catch_all_handler
 
+        if path_matched:
+            return HTTPException(405)
+
         # No handler found
-        return (None, None)
+        return HTTPException(404)
 
     async def _handle_request(self, req, resp):
         await req.read_request_line()
         # Find URL handler
-        req.handler, req.params = self._find_url_handler(req)
-        if not req.handler:
+        result = self._find_url_handler(req)
+
+        if isinstance(result, HTTPException):
             # No URL handler found - read response and issue HTTP 404
             await req.read_headers()
-            raise HTTPException(404)
-        # req.params = params
-        # req.handler = han
+            raise result
+
+        (h, extra) = result
+
+        req.handler, req.params = h, extra
         resp.params = req.params
         # Read / parse headers
-        await req.read_headers(req.params["save_headers"])
+        await req.read_headers(req.params.get("save_headers") or [])
 
     async def _handler(self, reader, writer):
         """Handler for TCP connection with
@@ -469,21 +530,6 @@ class webserver:
             await asyncio.wait_for(
                 self._handle_request(req, resp), self.request_timeout
             )
-
-            # OPTIONS method is handled automatically
-            if req.method == b"OPTIONS":
-                resp.add_access_control_headers()
-                # Since we support only HTTP 1.0 - it is important
-                # to tell browser that there is no payload expected
-                # otherwise some webkit based browsers (Chrome)
-                # treat this behavior as an error
-                resp.add_header("Content-Length", "0")
-                await resp._send_headers()
-                return
-
-            # Ensure that HTTP method is allowed for this path
-            if req.method not in req.params["methods"]:
-                raise HTTPException(405)
 
             if not req.handler:
                 raise HTTPException(500)
@@ -525,7 +571,14 @@ class webserver:
         finally:
             await writer.aclose()
 
-    def add_route(self, url, f, **kwargs):
+    def add_route(
+        self,
+        url: str,
+        f,
+        methods: list[str] = ["GET"],
+        save_headers: list[str] = [],
+        **kwargs,
+    ):
         """Add URL to function mapping.
 
         Arguments:
@@ -543,17 +596,18 @@ class webserver:
             raise ValueError("Invalid URL")
         # Initial params for route
         params = {
-            "methods": ["GET"],
-            "save_headers": [],
+            "methods": methods,
+            "save_headers": save_headers,
             "max_body_size": 1024,
             "allowed_access_control_headers": "*",
             "allowed_access_control_origins": "*",
         }
-        params.update(kwargs)
-        params["allowed_access_control_methods"] = ", ".join(params["methods"])  # type: ignore
+        params["allowed_access_control_methods"] = ", ".join(methods)
         # Convert methods/headers to bytestring
-        params["methods"] = [x.encode().upper() for x in params["methods"]]  # type: ignore
-        params["save_headers"] = [x.encode().lower() for x in params["save_headers"]]  # type: ignore
+        methods_bytes: list[bytes] = [x.encode().upper() for x in methods]
+        params["methods"] = methods_bytes
+        params.update(kwargs)
+        params["save_headers"] = [x.encode().lower() for x in save_headers]
         # If URL has a parameter
         if url.endswith(">"):
             idx = url.rfind("<")
@@ -565,9 +619,9 @@ class webserver:
             params["_param_name"] = param
             self.parameterized_url_map[path.encode()] = (f, params)
 
-        if url.encode() in self.explicit_url_map:
-            raise ValueError("URL exists")
-        self.explicit_url_map[url.encode()] = (f, params)
+        _params: Params = params  # type: ignore
+        for method in methods_bytes:
+            self.explicit_url_map.append((method, url.encode(), f, _params))
 
     def add_resource(self, cls, url, **kwargs):
         """Map resource (RestAPI) to URL
@@ -682,9 +736,9 @@ class webserver:
             port - port to listen on. By default - 8081
             loop_forever - run loo.loop_forever(), otherwise caller must run it by itself.
         """
-        self.server = asyncio.run(asyncio.start_server(
-            self._handler, host, port, backlog=self.backlog
-        ))
+        self.server = asyncio.run(
+            asyncio.start_server(self._handler, host, port, backlog=self.backlog)
+        )
         if loop_forever:
             self.loop.run_forever()
 
