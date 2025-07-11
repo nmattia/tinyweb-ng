@@ -197,15 +197,15 @@ class ServerParts(unittest.TestCase):
             # Create mock request object with "pre-parsed" url path
             rq = request(mockReader([]))
             rq.path = u[0].encode()
+            rq.method = b'GET'
             f, args = srv._find_url_handler(rq)
             self.assertEqual(u[1], f)
         # Some simple negative cases
         for j in junk:
             rq = request(mockReader([]))
             rq.path = j.encode()
-            f, args = srv._find_url_handler(rq)
-            self.assertIsNone(f)
-            self.assertIsNone(args)
+            result = srv._find_url_handler(rq)
+            self.assertIsInstance(result, HTTPException)
 
     def testUrlFinderParameterized(self):
         srv = webserver()
@@ -216,6 +216,7 @@ class ServerParts(unittest.TestCase):
         # Check first url (non param)
         rq = request(mockReader([]))
         rq.path = b'/'
+        rq.method = b'GET'
         f, args = srv._find_url_handler(rq)
         self.assertEqual(f, 0)
         # Check second url
@@ -244,10 +245,6 @@ class ServerParts(unittest.TestCase):
         # Query string is not allowed
         with self.assertRaises(ValueError):
             srv.add_route('/?a=a', 1)
-        # Duplicate urls
-        srv.add_route('/duppp', 1)
-        with self.assertRaises(ValueError):
-            srv.add_route('/duppp', 1)
 
 
 # We want to test decorators as well
@@ -310,6 +307,41 @@ class ServerFull(unittest.TestCase):
                     'YO, man2']
         self.assertEqual(wrt.history, expected)
         self.assertTrue(wrt.closed)
+
+    def testOverlappingPaths(self):
+        """Tests that the same path may be registered multiple times."""
+
+        server = webserver()
+
+        @server.route('/', methods=['GET'])
+        async def get(req, resp):
+            await resp._send_headers()
+            await resp.send("hi from GET")
+
+        @server.route('/', methods=['POST'])
+        async def get(req, resp):
+            await resp._send_headers()
+            await resp.send("hi from POST")
+
+        rdr = mockReader(['GET / HTTP/1.1\r\n',
+                          HDRE])
+        wrt = mockWriter()
+        asyncio.run(server._handler(rdr, wrt))
+        expected = ['HTTP/1.0 200 MSG\r\n\r\n',
+                    'hi from GET']
+        self.assertEqual(wrt.history, expected)
+        self.assertTrue(wrt.closed)
+
+        rdr = mockReader(['POST / HTTP/1.1\r\n',
+                          HDRE])
+        wrt = mockWriter()
+        asyncio.run(server._handler(rdr, wrt))
+        expected = ['HTTP/1.0 200 MSG\r\n\r\n',
+                    'hi from POST']
+        self.assertEqual(wrt.history, expected)
+        self.assertTrue(wrt.closed)
+
+
 
     def testResourceDecorator1(self):
         """Test @.resource() decorator"""
@@ -663,7 +695,7 @@ class ServerResource(unittest.TestCase):
                'Access-Control-Allow-Headers: *\r\n'
                'Content-Length: 0\r\n'
                'Access-Control-Allow-Origin: *\r\n'
-               'Access-Control-Allow-Methods: GET, POST\r\n\r\n']
+               'Access-Control-Allow-Methods: POST, PUT, DELETE\r\n\r\n']
         self.assertEqual(wrt.history, exp)
 
     def testGet(self):

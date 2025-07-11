@@ -1,6 +1,7 @@
 [tool.mypy]
 files=["tinyweb"]
 python_version = "3.12" # micropython is ~3.5 but mypy doesn't support that
+strict_equality = true
 
 # override known (CPython)stubs
 mypy_path = ".typings"
