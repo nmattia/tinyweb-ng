@@ -28,6 +28,12 @@ Params = TypedDict(
         "allowed_access_control_methods": str,
     },
 )
+
+# A route definition
+# (method, path, handler, params)
+type Route = tuple[bytes, bytes, Handler, Params]
+
+type PathParameters = list[(bytes, bytes)]  # list of param name and param value
 # TYPING_END
 
 log = logging.getLogger("WEB")
@@ -82,6 +88,36 @@ def parse_query_string(s):
     return res
 
 
+def match_url_paths(route_path: bytes, req_path: bytes) -> None | PathParameters:
+    """
+    Match the 'route_path' to the 'req_path' and returns any path parameters.
+
+    Returns None if there is no match.
+    """
+    path_params = []
+
+    route_parts = route_path.split(b"/")
+    req_parts = req_path.split(b"/")
+
+    if len(route_parts) != len(req_parts):
+        return None
+
+    # go through the parts, accumulating any path parameters found
+    # along the way.
+    for route_part, req_part in zip(route_parts, req_parts):
+        if route_part.startswith(b"<") and route_part.endswith(b">"):
+            param_key = route_part[1:-1]
+            param_val = req_part
+
+            path_params.append((param_key, param_val))
+            continue
+
+        if route_part != req_part:
+            return None
+
+    return path_params
+
+
 class HTTPException(Exception):
     """HTTP protocol exceptions"""
 
@@ -98,6 +134,8 @@ class request:
         self.headers = {}
         self.method: bytes = b""
         self.path: bytes = b""
+        # parsed named path parameters (if the route defines any)
+        self.path_params: PathParameters = []
         self.query_string = b""
         self.params: Params = {
             "methods": [b"GET"],
@@ -437,14 +475,14 @@ class webserver:
         self.request_timeout = request_timeout
         self.backlog = backlog
         self.debug = debug
-        # (method, path, handler, params)
-        self.explicit_url_map: list[tuple[bytes, bytes, Handler, Params]] = []
+        self.routes: list[Route] = []
         self.catch_all_handler = None
-        self.parameterized_url_map = {}
 
-    def _find_url_handler(self, req) -> tuple[Handler, Params] | HTTPException:
+    def _find_url_handler(
+        self, req
+    ) -> tuple[Handler, Params, PathParameters] | HTTPException:
         """Helper to find URL handler.
-        Returns tuple of (function, params) or (None, None) if not found.
+        Returns tuple of (function, params) or HTTPException (404 or 405) if not found.
         """
 
         async def handle_options(req, resp):
@@ -467,29 +505,19 @@ class webserver:
                 "allowed_access_control_methods": "POST, PUT, DELETE",
             }
 
-            return (handle_options, params)
+            return (handle_options, params, [])
 
         # tracks whether there was an exact path match to differentiate
         # between 404 and 405
         path_matched = False
 
-        # First try - lookup in explicit (non parameterized URLs)
-        for method, path, handler, params in self.explicit_url_map:
-            if method == req.method and path == req.path:
-                return (handler, params)
+        for method, path, handler, params in self.routes:
+            result = match_url_paths(path, req.path)
+            if result is not None:
+                if method == req.method:
+                    return (handler, params, result)
 
-            if path == req.path:
                 path_matched = True
-
-        # if req.path in self.explicit_url_map:
-        #    return self.explicit_url_map[req.path]
-        # Second try - strip last path segment and lookup in another map
-        idx = req.path.rfind(b"/") + 1
-        path2 = req.path[:idx]
-        if len(path2) > 0 and path2 in self.parameterized_url_map:
-            # Save parameter into request
-            req._param = req.path[idx:].decode()
-            return self.parameterized_url_map[path2]
 
         if self.catch_all_handler:
             return self.catch_all_handler
@@ -510,9 +538,11 @@ class webserver:
             await req.read_headers()
             raise result
 
-        (h, extra) = result
+        (handler, req_params, path_params) = result
 
-        req.handler, req.params = h, extra
+        req.handler = handler
+        req.params = req_params
+        req.path_params = path_params
         resp.params = req.params
         # Read / parse headers
         await req.read_headers(req.params.get("save_headers") or [])
@@ -536,10 +566,9 @@ class webserver:
 
             # Handle URL
             gc.collect()
-            if hasattr(req, "_param"):
-                await req.handler(req, resp, req._param)
-            else:
-                await req.handler(req, resp)
+
+            path_param_values = [v.decode() for (_, v) in req.path_params]
+            await req.handler(req, resp, *path_param_values)
             # Done here
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
@@ -608,20 +637,10 @@ class webserver:
         params["methods"] = methods_bytes
         params.update(kwargs)
         params["save_headers"] = [x.encode().lower() for x in save_headers]
-        # If URL has a parameter
-        if url.endswith(">"):
-            idx = url.rfind("<")
-            path = url[:idx]
-            idx += 1
-            param = url[idx:-1]
-            if path.encode() in self.parameterized_url_map:
-                raise ValueError("URL exists")
-            params["_param_name"] = param
-            self.parameterized_url_map[path.encode()] = (f, params)
 
         _params: Params = params  # type: ignore
         for method in methods_bytes:
-            self.explicit_url_map.append((method, url.encode(), f, _params))
+            self.routes.append((method, url.encode(), f, _params))
 
     def add_resource(self, cls, url, **kwargs):
         """Map resource (RestAPI) to URL
@@ -679,7 +698,7 @@ class webserver:
         }
 
         def _route(f):
-            self.catch_all_handler = (f, params)
+            self.catch_all_handler = (f, params, {})
             return f
 
         return _route
