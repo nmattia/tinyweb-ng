@@ -11,7 +11,7 @@ import uos as os
 import uerrno as errno
 import uasyncio as asyncio
 from tinyweb.server import webserver
-from tinyweb.server import urldecode_plus, parse_query_string
+from tinyweb.server import urldecode_plus, parse_query_string, match_url_paths
 from tinyweb.server import request, HTTPException
 
 
@@ -110,6 +110,23 @@ class Utils(unittest.TestCase):
         for r in runs:
             self.assertEqual(parse_query_string(r[0]), r[1])
 
+    def testMatchURLPaths(self):
+        runs = [(b'/', b'/', []),
+                (b'/foo', b'/foo', []),
+                (b'/oo', b'/foo', None),
+                (b'/foo', b'/oo', None),
+                (b'/foo/bar', b'/foo/bar', []),
+                (b'/foo/bar/', b'/foo/bar/', []),
+                (b'/users/<name>/', b'/users/alice/', [(b'name', b'alice')]),
+                (b'/users/<uid>/posts/<pid>/comments',
+                    b'/users/1337/posts/42/comments',
+                    [(b'uid', b'1337'), (b'pid', b'42')]),
+                ]
+
+        for (route_path, req_path, expected) in runs:
+            result = match_url_paths(route_path, req_path)
+            self.assertEqual(result, expected)
+
 
 class ServerParts(unittest.TestCase):
 
@@ -198,7 +215,7 @@ class ServerParts(unittest.TestCase):
             rq = request(mockReader([]))
             rq.path = u[0].encode()
             rq.method = b'GET'
-            f, args = srv._find_url_handler(rq)
+            f, args, _ = srv._find_url_handler(rq)
             self.assertEqual(u[1], f)
         # Some simple negative cases
         for j in junk:
@@ -206,36 +223,6 @@ class ServerParts(unittest.TestCase):
             rq.path = j.encode()
             result = srv._find_url_handler(rq)
             self.assertIsInstance(result, HTTPException)
-
-    def testUrlFinderParameterized(self):
-        srv = webserver()
-        # Add few routes
-        srv.add_route('/', 0)
-        srv.add_route('/<user_name>', 1)
-        srv.add_route('/a/<id>', 2)
-        # Check first url (non param)
-        rq = request(mockReader([]))
-        rq.path = b'/'
-        rq.method = b'GET'
-        f, args = srv._find_url_handler(rq)
-        self.assertEqual(f, 0)
-        # Check second url
-        rq.path = b'/user1'
-        f, args = srv._find_url_handler(rq)
-        self.assertEqual(f, 1)
-        self.assertEqual(args['_param_name'], 'user_name')
-        self.assertEqual(rq._param, 'user1')
-        # Check third url
-        rq.path = b'/a/123456'
-        f, args = srv._find_url_handler(rq)
-        self.assertEqual(f, 2)
-        self.assertEqual(args['_param_name'], 'id')
-        self.assertEqual(rq._param, '123456')
-        # When param is empty and there is no non param endpoint
-        rq.path = b'/a/'
-        f, args = srv._find_url_handler(rq)
-        self.assertEqual(f, 2)
-        self.assertEqual(rq._param, '')
 
     def testUrlFinderNegative(self):
         srv = webserver()
