@@ -1,5 +1,5 @@
 [tool.mypy]
-files=["tinyweb"]
+files=["tinyweb", "test"]
 python_version = "3.12" # micropython is ~3.5 but mypy doesn't support that
 strict_equality = true
 
@@ -17,7 +17,7 @@ explicit_package_bases = true
 check_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["logging", "gc"]
+module = ["logging", "gc", "unittest"]
 ignore_missing_imports = true
 
 [tool.ruff]

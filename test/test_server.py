@@ -214,7 +214,11 @@ class ServerParts(unittest.TestCase):
             rq = request(mockReader([]))
             rq.path = u[0].encode()
             rq.method = b"GET"
-            f, args, _ = srv._find_url_handler(rq)
+            result = srv._find_url_handler(rq)
+            if isinstance(result, HTTPException):
+                raise Exception("Expected result")
+
+            f, args, _ = result
             self.assertEqual(u[1], f)
         # Some simple negative cases
         for j in junk:
