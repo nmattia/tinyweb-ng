@@ -21,10 +21,10 @@ test: build container
 	# run with the local tinyweb mounted to the default search path
 	# https://docs.micropython.org/en/latest/unix/quickref.html#envvar-MICROPYPATH
 	$(DOCKER) run --rm \
-		-v ./test:/srv/tinyweb/test \
+		-v ./test:/opt/tinyweb-test \
 		-v $(OUTDIR)/tinyweb:/root/.micropython/lib/tinyweb \
 		tinyweb \
-		micropython /srv/tinyweb/test/test_server.py
+		micropython /opt/tinyweb-test/test_server.py
 
 lint: ./tinyweb/server.py
 	ruff check
