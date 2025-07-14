@@ -29,26 +29,11 @@ body {
 
             <section>
                 <h2>Machine</h2>
-                <ul>
-                    <li>CPU Freq: <output id="freq"></output></li>
-                    <li>Memory Free:</li>
-                    <li>Memory Allocated:</li>
-                    <li>Memory Total:</li>
-                </ul>
-            </section>
-            <section>
-                <h2>Network</h2>
-                <ul>
-                    <li>IP:</li>
-                    <li>Network mask:</li>
-                    <li>Gateway:</li>
-                    <li>DNS:</li>
-                </ul>
+                <ul id="machine-data"></ul>
             </section>
             <section>
                 <h2>GPIO</h2>
-                <ul id="pins">
-                </ul>
+                <ul id="pins"></ul>
             </section>
             <button onclick="refresh()">Refresh</button>
 
@@ -59,9 +44,8 @@ body {
             async function refresh() {
                 const pinsElem = document.querySelector("#pins");
                 pinsElem.innerHTML = '';
-                let response = await fetch("/pins/");
-                const pins = (await response.json()).pins;
-                for (const pin of pins) {
+                let response = await (await fetch("/pins/")).json();
+                for (const pin of response['pins']) {
                     const li = document.createElement("li");
                     const btn = document.createElement("button");
                     btn.innerText = "toggle";
@@ -71,15 +55,20 @@ body {
                     pinsElem.append(li);
                 }
 
-                response = await fetch("/info");
-
-                const jn = await response.json();
-                document.querySelector("#freq").innerText = jn['freq'];
+                response = await (await fetch("/info")).json();
+                const ul = document.querySelector("#machine-data");
+                ul.innerHTML = '';
+                for (const kv of response) {
+                    const li = document.createElement("li");
+                    li.innerText = kv['title'] + ": " + kv['value'];
+                    ul.append(li);
+                }
             }
 
             async function toggle(pin) {
                 const _ = await fetch(`/pins/${pin}/toggle`, { method: "POST" });
             }
+            window.addEventListener("load", () => refresh());
         </script>
 
     </body>
