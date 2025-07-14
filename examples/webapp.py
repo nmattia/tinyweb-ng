@@ -4,7 +4,6 @@ import gc
 import json
 import sys
 from tinyweb.server import webserver
-import machine
 import logging
 import network
 
@@ -32,13 +31,10 @@ async def get_index(req, resp):
 async def get_info(req, resp):
     """Returns information about the board."""
     resp.headers[b"content-type"] = b"application/json"
+
+    obj = board_data()
+
     await resp._send_headers()
-    obj = {
-        "mem_free": gc.mem_free(),
-        "mem_alloc": gc.mem_alloc(),
-        "platform": sys.platform,
-        "freq": machine.freq(),
-    }
     await resp.send(json.dumps(obj))
 
 
@@ -70,6 +66,48 @@ async def toggle_pin(req, resp, pin_name):
     resp.headers[b"content-type"] = b"application/json"
     await resp._send_headers()
     await resp.send(json.dumps({}))
+
+
+def board_data():
+    """Return boad data in format [{"title": "foo", "value": "bar"}]."""
+
+    obj = [{"title": "Platform", "value": sys.platform}]
+
+    # some of these are not available on all platforms, so as much as possible we wrap them in try/catch
+    try:
+        ap = network.WLAN(network.AP_IF)
+        if ap.active():
+            (ip, _, _, _) = ap.ifconfig()
+            obj.append({"title": "Network", "value": f"{ip} (AP mode)"})
+    except ModuleNotFoundError:
+        pass
+
+    try:
+        mem_free = gc.mem_free()
+        mem_tot = mem_free + gc.mem_alloc()
+        mem_data = f"{mem_free}B/{mem_tot}B ({mem_free / mem_tot * 100:.2}%)"
+        obj.append({"title": "Memory Usage", "value": mem_data})
+    except ModuleNotFoundError:
+        pass
+
+    try:
+        import machine
+
+        # while the freq (as a string) ends with 000, increase the 10e3 factor
+        # in the unit and strip those three 0s
+        freq = str(machine.freq())
+        freq_unit_factor = ["", "k", "M", "G", "T"]  # Hz, kHz, MHz, etc
+        freq_10e3 = 0
+        while freq.endswith("000"):
+            freq = freq[:3]
+            freq_10e3 += 1
+
+        freq = f"{freq}{freq_unit_factor[freq_10e3]}Hz"
+        obj.append({"title": "Chip Frequency", "value": freq})
+    except ModuleNotFoundError:
+        pass
+
+    return obj
 
 
 def run():
