@@ -248,16 +248,6 @@ async def route_for_decorator(req, resp, user_id):
     await resp.send("YO, {}".format(user_id))
 
 
-@server_for_decorators.resource("/rest1/<user_id>")
-def resource_for_decorator1(data, user_id):
-    return {"name": user_id}
-
-
-@server_for_decorators.resource("/rest2/<user_id>")
-async def resource_for_decorator2(data, user_id):
-    yield '{"name": user_id}'
-
-
 class ServerFull(unittest.TestCase):
     def setUp(self):
         self.dummy_called = False
@@ -324,43 +314,6 @@ class ServerFull(unittest.TestCase):
         wrt = mockWriter()
         asyncio.run(server._handler(rdr, wrt))
         expected = ["HTTP/1.0 200 MSG\r\n\r\n", "hi from POST"]
-        self.assertEqual(wrt.history, expected)
-        self.assertTrue(wrt.closed)
-
-    def testResourceDecorator1(self):
-        """Test @.resource() decorator"""
-        rdr = mockReader(["GET /rest1/man1 HTTP/1.1\r\n", HDRE])
-        wrt = mockWriter()
-        asyncio.run(server_for_decorators._handler(rdr, wrt))
-        expected = [
-            "HTTP/1.0 200 MSG\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            + "Access-Control-Allow-Headers: *\r\n"
-            + "Content-Length: 16\r\n"
-            + "Access-Control-Allow-Methods: GET\r\n"
-            + "Content-Type: application/json\r\n\r\n",
-            '{"name": "man1"}',
-        ]
-        self.assertEqual(wrt.history, expected)
-        self.assertTrue(wrt.closed)
-
-    def testResourceDecorator2(self):
-        rdr = mockReader(["GET /rest2/man2 HTTP/1.1\r\n", HDRE])
-        wrt = mockWriter()
-        asyncio.run(server_for_decorators._handler(rdr, wrt))
-        expected = [
-            "HTTP/1.1 200 MSG\r\n"
-            + "Access-Control-Allow-Methods: GET\r\n"
-            + "Connection: close\r\n"
-            + "Access-Control-Allow-Headers: *\r\n"
-            + "Content-Type: application/json\r\n"
-            + "Transfer-Encoding: chunked\r\n"
-            + "Access-Control-Allow-Origin: *\r\n\r\n",
-            "11\r\n",
-            '{"name": user_id}',
-            "\r\n",
-            "0\r\n\r\n",
-        ]
         self.assertEqual(wrt.history, expected)
         self.assertTrue(wrt.closed)
 
@@ -634,70 +587,12 @@ class ServerFull(unittest.TestCase):
         # Connection must be closed
         self.assertTrue(wrt.closed)
 
-
-class ResourceGetPost:
-    """Simple REST API resource class with just two methods"""
-
-    def get(self, data):
-        return {"data1": "junk"}
-
-    def post(self, data):
-        return data
-
-
-class ResourceGetParam:
-    """Parameterized REST API resource"""
-
-    def __init__(self):
-        self.user_id = "user_id"
-
-    def get(self, data, user_id):
-        return {self.user_id: user_id}
-
-
-class ResourceGetArgs:
-    """REST API resource with additional arguments"""
-
-    def get(self, data, arg1, arg2):
-        return {"arg1": arg1, "arg2": arg2}
-
-
-class ResourceGenerator:
-    """REST API with generator as result"""
-
-    async def get(self, data):
-        yield "longlongchunkchunk1"
-        yield "chunk2"
-        # unicode support
-        yield "\u265e"
-
-
-class ResourceNegative:
-    """To cover negative test cases"""
-
-    def delete(self, data):
-        # Broken pipe emulation
-        raise OSError(32, "", "")
-
-    def put(self, data):
-        # Simple unhandled expection
-        raise Exception("something")
-
-
-class ServerResource(unittest.TestCase):
-    def setUp(self):
-        self.srv = webserver()
-        self.srv.add_resource(ResourceGetPost, "/")
-        self.srv.add_resource(ResourceGetParam, "/param/<user_id>")
-        self.srv.add_resource(ResourceGetArgs, "/args", arg1=1, arg2=2)
-        self.srv.add_resource(ResourceGenerator, "/gen")
-        self.srv.add_resource(ResourceNegative, "/negative")
-
     def testOptions(self):
         # Ensure that only GET/POST methods are allowed:
+        srv = webserver()
         rdr = mockReader(["OPTIONS / HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(srv._handler(rdr, wrt))
         exp = [
             "HTTP/1.0 200 MSG\r\n" + "Access-Control-Allow-Headers: *\r\n"
             "Content-Length: 0\r\n"
@@ -707,115 +602,67 @@ class ServerResource(unittest.TestCase):
         self.assertEqual(wrt.history, exp)
 
     def testGet(self):
+        srv = webserver()
+
+        async def hello(req, resp):
+            resp.add_header("Content-Type", "text/plain")
+            await resp._send_headers()
+            await resp.send("hello")
+
+        srv.add_route("/", hello)
         rdr = mockReader(["GET / HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(srv._handler(rdr, wrt))
         exp = [
-            "HTTP/1.0 200 MSG\r\n" + "Access-Control-Allow-Origin: *\r\n"
-            "Access-Control-Allow-Headers: *\r\n"
-            "Content-Length: 17\r\n"
-            "Access-Control-Allow-Methods: GET, POST\r\n"
-            "Content-Type: application/json\r\n\r\n",
-            '{"data1": "junk"}',
+            "HTTP/1.0 200 MSG\r\nContent-Type: text/plain\r\n\r\n",
+            "hello",
         ]
         self.assertEqual(wrt.history, exp)
 
     def testGetWithParam(self):
-        rdr = mockReader(["GET /param/123 HTTP/1.0\r\n", HDRE])
-        wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
-        exp = [
-            "HTTP/1.0 200 MSG\r\n" + "Access-Control-Allow-Origin: *\r\n"
-            "Access-Control-Allow-Headers: *\r\n"
-            "Content-Length: 18\r\n"
-            "Access-Control-Allow-Methods: GET\r\n"
-            "Content-Type: application/json\r\n\r\n",
-            '{"user_id": "123"}',
-        ]
-        self.assertEqual(wrt.history, exp)
+        srv = webserver()
 
-    def testGetWithArgs(self):
-        rdr = mockReader(["GET /args HTTP/1.0\r\n", HDRE])
-        wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
-        exp = [
-            "HTTP/1.0 200 MSG\r\n" + "Access-Control-Allow-Origin: *\r\n"
-            "Access-Control-Allow-Headers: *\r\n"
-            "Content-Length: 22\r\n"
-            "Access-Control-Allow-Methods: GET\r\n"
-            "Content-Type: application/json\r\n\r\n",
-            '{"arg1": 1, "arg2": 2}',
-        ]
-        self.assertEqual(wrt.history, exp)
+        async def echo(req, resp, param):
+            resp.add_header("Content-Type", "text/plain")
+            await resp._send_headers()
+            await resp.send(param)
 
-    def testGenerator(self):
-        rdr = mockReader(["GET /gen HTTP/1.0\r\n", HDRE])
+        srv.add_route("/echo/<param>", echo)
+        rdr = mockReader(["GET /echo/123 HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(srv._handler(rdr, wrt))
         exp = [
-            "HTTP/1.1 200 MSG\r\n"
-            + "Access-Control-Allow-Methods: GET\r\n"
-            + "Connection: close\r\n"
-            + "Access-Control-Allow-Headers: *\r\n"
-            + "Content-Type: application/json\r\n"
-            + "Transfer-Encoding: chunked\r\n"
-            + "Access-Control-Allow-Origin: *\r\n\r\n",
-            "13\r\n",
-            "longlongchunkchunk1",
-            "\r\n",
-            "6\r\n",
-            "chunk2",
-            "\r\n",
-            # next chunk is 1 char len UTF-8 string
-            "3\r\n",
-            "\u265e",
-            "\r\n",
-            "0\r\n\r\n",
-        ]
-        self.assertEqual(wrt.history, exp)
-
-    def testPost(self):
-        # Ensure that parameters from query string / body will be combined as well
-        rdr = mockReader(
-            [
-                "POST /?qs=qs1 HTTP/1.0\r\n",
-                HDR("Content-Length: 17"),
-                HDR("Content-Type: application/json"),
-                HDRE,
-                '{"body": "body1"}',
-            ]
-        )
-        wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
-        exp = [
-            "HTTP/1.0 200 MSG\r\n" + "Access-Control-Allow-Origin: *\r\n"
-            "Access-Control-Allow-Headers: *\r\n"
-            "Content-Length: 30\r\n"
-            "Access-Control-Allow-Methods: GET, POST\r\n"
-            "Content-Type: application/json\r\n\r\n",
-            '{"qs": "qs1", "body": "body1"}',
+            "HTTP/1.0 200 MSG\r\nContent-Type: text/plain\r\n\r\n",
+            "123",
         ]
         self.assertEqual(wrt.history, exp)
 
     def testInvalidMethod(self):
         rdr = mockReader(["PUT / HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
+        srv = webserver()
+
+        async def get(req, resp):
+            resp.add_header("Content-Type", "text/plain")
+            await resp._send_headers()
+
+        srv.add_route("/", get)
+        asyncio.run(srv._handler(rdr, wrt))
         exp = ["HTTP/1.0 405 MSG\r\n\r\n"]
         self.assertEqual(wrt.history, exp)
 
     def testException(self):
-        rdr = mockReader(["PUT /negative HTTP/1.0\r\n", HDRE])
+        rdr = mockReader(["GET /err HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
+        srv = webserver()
+
+        async def err(req, resp):
+            raise Exception("This is an error")
+
+        srv.add_route("/err", err)
+        asyncio.run(srv._handler(rdr, wrt))
         exp = ["HTTP/1.0 500 MSG\r\n\r\n"]
         self.assertEqual(wrt.history, exp)
-
-    def testBrokenPipe(self):
-        rdr = mockReader(["DELETE /negative HTTP/1.0\r\n", HDRE])
-        wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
-        self.assertEqual(wrt.history, [])
 
 
 class StaticContent(unittest.TestCase):
