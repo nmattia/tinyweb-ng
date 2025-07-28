@@ -397,67 +397,6 @@ class response:
                 raise
 
 
-async def restful_resource_handler(req, resp, param=None):
-    """Handler for RESTful API endpoins"""
-    # Gather data - query string, JSON in request body...
-    data = await req.read_parse_form_data()
-    # Add parameters from URI query string as well
-    # This one is actually for simply development of RestAPI
-    if req.query_string != b"":
-        data.update(parse_query_string(req.query_string.decode()))
-    # Call actual handler
-    _handler, _kwargs = req.params["_callmap"][req.method]
-    # Collect garbage before / after handler execution
-    gc.collect()
-    if param:
-        res = _handler(data, param, **_kwargs)
-    else:
-        res = _handler(data, **_kwargs)
-    gc.collect()
-    # Handler result could be:
-    # 1. generator - in case of large payload
-    # 2. string - just string :)
-    # 2. dict - meaning client what tinyweb to convert it to JSON
-    # it can also return error code together with str / dict
-    # res = {'blah': 'blah'}
-    # res = {'blah': 'blah'}, 201
-    if isinstance(res, type_gen):
-        # Result is generator, use chunked response
-        # NOTICE: HTTP 1.0 by itself does not support chunked responses, so, making workaround:
-        # Response is HTTP/1.1 with Connection: close
-        resp.version = "1.1"
-        resp.add_header("Connection", "close")
-        resp.add_header("Content-Type", "application/json")
-        resp.add_header("Transfer-Encoding", "chunked")
-        resp.add_access_control_headers()
-        await resp._send_headers()
-        # Drain generator
-        if res:
-            for chunk in res:
-                chunk_len = len(chunk.encode("utf-8"))
-                await resp.send("{:x}\r\n".format(chunk_len))
-                await resp.send(chunk)
-                await resp.send("\r\n")
-                gc.collect()
-        await resp.send("0\r\n\r\n")
-    else:
-        if isinstance(res, tuple):
-            resp.code = res[1]
-            res = res[0]
-        elif res is None:
-            raise Exception("Result expected")
-        # Send response
-        if type(res) is dict:
-            res_str = json.dumps(res)
-        else:
-            res_str = res
-        resp.add_header("Content-Type", "application/json")
-        resp.add_header("Content-Length", str(len(res_str)))
-        resp.add_access_control_headers()
-        await resp._send_headers()
-        await resp.send(res_str)
-
-
 class webserver:
     def __init__(self, request_timeout=3, backlog=16, debug=False):
         """Tiny Web Server class.
@@ -642,43 +581,6 @@ class webserver:
         for method in methods_bytes:
             self.routes.append((method, url.encode(), f, _params))
 
-    def add_resource(self, cls, url, **kwargs):
-        """Map resource (RestAPI) to URL
-
-        Arguments:
-            cls - Resource class to map to
-            url - url to map to class
-            kwargs - User defined key args to pass to the handler.
-
-        Example:
-            class myres():
-                def get(self, data):
-                    return {'hello': 'world'}
-
-
-            app.add_resource(myres, '/api/myres')
-        """
-        methods = []
-        callmap = {}
-        # Create instance of resource handler, if passed as just class (not instance)
-        try:
-            obj = cls()
-        except TypeError:
-            obj = cls
-        # Get all implemented HTTP methods and make callmap
-        for m in ["GET", "POST", "PUT", "PATCH", "DELETE"]:
-            fn = m.lower()
-            if hasattr(obj, fn):
-                methods.append(m)
-                callmap[m.encode()] = (getattr(obj, fn), kwargs)
-        self.add_route(
-            url,
-            restful_resource_handler,
-            methods=methods,
-            save_headers=["Content-Length", "Content-Type"],
-            _callmap=callmap,
-        )
-
     def catchall(self):
         """Decorator for catchall()
 
@@ -718,34 +620,6 @@ class webserver:
             return f
 
         return _route
-
-    def resource(self, url, method="GET", **kwargs):
-        """Decorator for add_resource() method
-
-        Examples:
-            @app.resource('/users')
-            def users(data):
-                return {'a': 1}
-
-            @app.resource('/messages/<topic_id>')
-            async def index(data, topic_id):
-                yield '{'
-                yield '"topic_id": "{}",'.format(topic_id)
-                yield '"message": "test",'
-                yield '}'
-        """
-
-        def _resource(f):
-            self.add_route(
-                url,
-                restful_resource_handler,
-                methods=[method],
-                save_headers=["Content-Length", "Content-Type"],
-                _callmap={method.encode(): (f, kwargs)},
-            )
-            return f
-
-        return _resource
 
     def run(self, host="127.0.0.1", port=8081, loop_forever=True):
         """Run Web Server. By default it runs forever.

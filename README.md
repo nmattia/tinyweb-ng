@@ -110,33 +110,6 @@ Main *tinyweb* app class.
         await resp.send_file('static/index.simple.html')
     ```
 
-* `add_resource(self, cls, url, **kwargs)` – Map a REST resource class to a URL.
-  Example:
-    ```python
-    class CustomersList():
-        def get(self, data):
-            return {'1': {'name': 'Jack'}, '2': {'name': 'Bob'}}
-
-        def post(self, data):
-            db[str(next_id)] = data
-            return {'message': 'created'}, 201
-    ```
-  Only `GET`, `POST`, `PUT`, and `DELETE` are supported. See the [REST API example](./examples/rest_api.py).
-
-* `@resource` – Like `@route`, but for REST resources:
-    ```python
-    @app.resource('/user/<id>')
-    def user(data, id):
-        return {'id': id, 'name': 'foo'}
-
-    @app.resource('/user/<id>', method='POST')
-    async def user(data, id):
-        yield '{'
-        yield '"id": "{}",'.format(id)
-        yield '"name": "test"'
-        yield '}'
-    ```
-
 * `run(self, host="127.0.0.1", port=8081, loop_forever=True, backlog=10)` – Run the web server.
   * `loop_forever` – If `True`, runs `asyncio.loop_forever()`. Set to `False` if you want to manage the loop yourself.
 
