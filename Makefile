@@ -1,18 +1,22 @@
-.PHONY: container build test
+.PHONY: container build test clean
+
+.DEFAULT_GOAL := build
 
 DOCKER ?= docker
 OUTDIR ?= ./dist
+SERVER_PY := $(OUTDIR)/tinyweb/server.py
+SERVER_MPY := $(OUTDIR)/tinyweb/server.mpy
 
+build: $(SERVER_MPY) $(SERVER_PY)
 
-OUTFILE = $(OUTDIR)/tinyweb/server.py
-
-build: $(OUTFILE)
-
-$(OUTFILE): ./tinyweb/server.py
+$(SERVER_PY): ./tinyweb/server.py
 	mkdir -p $(OUTDIR)/tinyweb
-	strip-hints ./tinyweb/server.py -o $(OUTFILE)
-	@sed -i.bak '/# TYPING_START/,/# TYPING_END/ s/.*//' $(OUTFILE)
-	@rm -f $(OUTFILE).bak
+	strip-hints ./tinyweb/server.py -o $(OUTDIR)/tinyweb/server.py
+	@sed -i.bak '/# TYPING_START/,/# TYPING_END/ s/.*//' $(SERVER_PY)
+	@rm -f $(SERVER_PY).bak
+
+$(SERVER_MPY): $(SERVER_PY)
+	mpy-cross $(SERVER_PY)
 
 container: Dockerfile
 	$(DOCKER) build . -t tinyweb
@@ -29,3 +33,6 @@ test: build container
 lint: ./tinyweb/server.py
 	ruff check
 	mypy
+
+clean:
+	rm -rf $(OUTDIR)
