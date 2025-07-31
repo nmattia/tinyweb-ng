@@ -35,7 +35,7 @@ First download MicroPython for your board [here](https://micropython.org/downloa
 <details><summary><h4>Install MicroPython on ESP8266</h4></summary>
 
 ```bash
-pip3 install esptool
+pip3 install esptool==5.0.1
 esptool erase_flash
 curl -LO https://micropython.org/resources/firmware/ESP8266_GENERIC-20250415-v1.25.0.bin
 esptool write-flash --flash-size=detect 0 ./ESP8266_GENERIC-20250415-v1.25.0.bin
@@ -46,7 +46,7 @@ esptool write-flash --flash-size=detect 0 ./ESP8266_GENERIC-20250415-v1.25.0.bin
 <details><summary><h4>Install MicroPython on ESP32-C6</h4></summary>
 
 ```bash
-pip3 install esptool
+pip3 install esptool==5.0.1
 esptool erase_flash
 curl -LO https://micropython.org/resources/firmware/ESP32_GENERIC_C6-20250415-v1.25.0.bin
 esptool write-flash --flash-size=detect 0 ./ESP32_GENERIC_C6-20250415-v1.25.0.bin
@@ -64,7 +64,7 @@ mpremote mip install logging
 ```
 
 ```bash
-pip3 install mpy-cross
+pip3 install mpy-cross==1.25.0.post2
 mpy-cross ./dist/tinyweb/server.py
 mpremote cp ./dist/tinyweb/server.mpy :/lib/tinyweb/server.mpy
 ```
@@ -73,11 +73,10 @@ mpremote cp ./dist/tinyweb/server.mpy :/lib/tinyweb/server.mpy
 
 Build the tinyweb server library with the following commands:
 
-
 ```bash
-make build
 mpremote mkdir :/lib || true
 mpremote mkdir :/lib/tinyweb || true
+make ./dist/tinyweb/server.py
 mpremote cp ./dist/tinyweb/server.py :/lib/tinyweb/server.py
 ```
 
