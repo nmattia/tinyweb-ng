@@ -6,7 +6,6 @@ MIT license
 
 import logging
 import asyncio
-import ujson as json
 import gc
 import uos as os
 import uerrno as errno
@@ -37,8 +36,6 @@ type PathParameters = list[(bytes, bytes)]  # list of param name and param value
 # TYPING_END
 
 log = logging.getLogger("WEB")
-
-type_gen = type((lambda: (yield))())
 
 # with v1.21.0 release all u-modules where renamend without the u prefix
 # -> uasyncio no named asyncio
@@ -191,42 +188,6 @@ class request:
 
             if frags[0].lower() in [header.lower() for header in save_headers]:
                 self.headers[frags[0]] = frags[1].strip()
-
-    async def read_parse_form_data(self):
-        """Read HTTP form data (payload), if any.
-        Function is generator.
-
-        Returns:
-            - dict of key / value pairs
-            - None in case of no form data present
-        """
-        # TODO: Probably there is better solution how to handle
-        # request body, at least for simple urlencoded forms - by processing
-        # chunks instead of accumulating payload.
-        gc.collect()
-        if b"Content-Length" not in self.headers:
-            return {}
-        # Parse payload depending on content type
-        if b"Content-Type" not in self.headers:
-            # Unknown content type, return unparsed, raw data
-            return {}
-        size = int(self.headers[b"Content-Length"])
-        # NOTE: params["max_body_size"] might not be set
-        max_body_size = self.params["max_body_size"]
-        if size < 0 or max_body_size is not None and size > max_body_size:
-            raise HTTPException(413)
-        data = await self.reader.readexactly(size)
-        # Use only string before ';', e.g:
-        # application/x-www-form-urlencoded; charset=UTF-8
-        ct = self.headers[b"Content-Type"].split(b";", 1)[0]
-        try:
-            if ct == b"application/json":
-                return json.loads(data)
-            elif ct == b"application/x-www-form-urlencoded":
-                return parse_query_string(data.decode())
-        except ValueError:
-            # Re-generate exception for malformed form data
-            raise HTTPException(400)
 
 
 class response:
