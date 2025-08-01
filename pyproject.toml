@@ -21,4 +21,4 @@ module = ["logging", "gc", "unittest"]
 ignore_missing_imports = true
 
 [tool.ruff]
-include = [ "tinyweb/server.py", "test/test_server.py", "examples/webapp.py" ]
+include = [ "tinyweb/server.py", "test/unit.py", "examples/webapp.py" ]
