@@ -28,7 +28,7 @@ test: build container
 		-v ./test:/opt/tinyweb-test \
 		-v $(OUTDIR)/tinyweb:/root/.micropython/lib/tinyweb \
 		tinyweb \
-		micropython /opt/tinyweb-test/test_server.py
+		micropython /opt/tinyweb-test/unit.py
 
 lint: ./tinyweb/server.py
 	ruff check
