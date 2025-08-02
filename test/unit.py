@@ -11,7 +11,12 @@ import uos as os
 import uerrno as errno
 import uasyncio as asyncio
 from tinyweb.server import webserver
-from tinyweb.server import urldecode_plus, parse_query_string, match_url_paths
+from tinyweb.server import (
+    urldecode_plus,
+    parse_request_line,
+    parse_query_string,
+    match_url_paths,
+)
 from tinyweb.server import request, HTTPException
 
 
@@ -137,28 +142,45 @@ class Utils(unittest.TestCase):
             result = match_url_paths(route_path, req_path)
             self.assertEqual(result, expected)
 
+    def test_parse_request_line_empty(self):
+        self.assertIsNone(parse_request_line(b""))
+
+    def test_parse_request_line_bad_method(self):
+        self.assertIsNone(parse_request_line(b"GOT / HTTP/1.0"))
+
+    def test_parse_request_line_bad_version(self):
+        self.assertIsNone(parse_request_line(b"GET / HTTP/"))
+        self.assertIsNone(parse_request_line(b"GET / HTTP/1"))
+        self.assertIsNone(parse_request_line(b"GET / HTTP/.1"))
+
+    def test_parse_request_line_no_target(self):
+        self.assertIsNone(parse_request_line(b"GET HTTP/1.1"))
+        self.assertIsNone(parse_request_line(b"GET  HTTP/1.1"))
+
+    def test_parse_request_line_bad_spaces(self):
+        self.assertIsNone(parse_request_line(b"GET /  HTTP/1.1"))
+        self.assertIsNone(parse_request_line(b"GET  / HTTP/1.1"))
+
+    def test_parse_request_line_method(self):
+        parsed = parse_request_line(b"GET / HTTP/1.1")
+        if not parsed:
+            raise Exception("None")
+        self.assertEqual(parsed["method"], b"GET")
+
+    def test_parse_request_line_target(self):
+        parsed = parse_request_line(b"GET /foo HTTP/1.1")
+        if not parsed:
+            raise Exception("None")
+        self.assertEqual(parsed["target"], b"/foo")
+
+    def test_parse_request_line_version(self):
+        parsed = parse_request_line(b"GET / HTTP/1.1")
+        if not parsed:
+            raise Exception("None")
+        self.assertEqual(parsed["version"], (1, 1))
+
 
 class ServerParts(unittest.TestCase):
-    def testRequestLine(self):
-        runs = [
-            ("GETT / HTTP/1.1", "GETT", "/"),
-            ("TTEG\t/blah\tHTTP/1.1", "TTEG", "/blah"),
-            ("POST /qq/?q=q HTTP", "POST", "/qq/", "q=q"),
-            ("POST /?q=q BSHT", "POST", "/", "q=q"),
-            ("POST /?q=q&a=a JUNK", "POST", "/", "q=q&a=a"),
-        ]
-
-        for r in runs:
-            try:
-                req = request(mockReader(r[0]))
-                asyncio.run(req.read_request_line())
-                self.assertEqual(r[1].encode(), req.method)
-                self.assertEqual(r[2].encode(), req.path)
-                if len(r) > 3:
-                    self.assertEqual(r[3].encode(), req.query_string)
-            except Exception:
-                self.fail("exception on payload --{}--".format(r[0]))
-
     def testRequestLineEmptyLinesBefore(self):
         req = request(mockReader(["\n", "\r\n", "GET /?a=a HTTP/1.1"]))
         asyncio.run(req.read_request_line())
@@ -276,9 +298,20 @@ class TestHTTPServer(unittest.TestCase):
 
         resp = asyncio.run(send_request())
 
-        self.assertEqual(resp, expected)
+        if callable(expected):
+            self.assertTrue(expected(resp), "Response did not match expectations")
+        else:
+            self.assertEqual(resp, expected)
 
-    def test_foo(self):
+    def test_http_1_0_request(self):
+        request = "GET / HTTP/1.0\r\n\r\n"
+        self.assertRequestResponse(request, lambda resp: resp.startswith("HTTP/1.0"))
+
+    def test_http_1_1_request(self):
+        request = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+        self.assertRequestResponse(request, lambda resp: resp.startswith("HTTP/1.0"))
+
+    def test_not_found(self):
         self.assertRequestResponse(
             "GET / HTTP/1.1\r\n\r\n", b"HTTP/1.0 404 MSG\r\n\r\n"
         )
