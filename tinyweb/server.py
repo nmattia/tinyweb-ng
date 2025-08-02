@@ -194,12 +194,15 @@ class response:
     """HTTP Response class"""
 
     def __init__(self, _writer):
-        self.writer: asyncio.StreamWriter = _writer
-        self.send = _writer.awrite
+        self._writer: asyncio.StreamWriter = _writer
         self.code = 200
         self.version = "1.0"
         self.headers = {}
         self.params: dict = {}
+
+    async def send(self, content, **kwargs):
+        self._writer.write(content)
+        await self._writer.drain()
 
     async def _send_headers(self):
         """Compose and send:
@@ -329,8 +332,8 @@ class response:
         try:
             # Get file size
             stat = os.stat(filename)
-            slen = str(stat[6])
-            self.add_header("Content-Length", slen)
+            file_len = stat[6]
+            self.add_header("Content-Length", str(file_len))
             # Find content type
             if content_type:
                 self.add_header("Content-Type", content_type)
@@ -344,12 +347,12 @@ class response:
             with open(filename) as f:
                 await self._send_headers()
                 gc.collect()
-                buf = bytearray(min(stat[6], buf_size))
+                buf = bytearray(min(file_len, buf_size))
                 while True:
                     size = f.readinto(buf)
                     if size == 0:
                         break
-                    await self.send(buf, sz=size)
+                    await self.send(buf[:size])
         except OSError as e:
             # special handling for ENOENT / EACCESS
             if e.args[0] in (errno.ENOENT, errno.EACCES):
@@ -498,7 +501,8 @@ class webserver:
             except Exception as e:
                 pass
         finally:
-            await writer.aclose()
+            writer.close()
+            await writer.wait_closed()
 
     def add_route(
         self,
