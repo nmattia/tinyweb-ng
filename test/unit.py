@@ -237,6 +237,56 @@ class ServerParts(unittest.TestCase):
             srv.add_route("/?a=a", 1)
 
 
+async def send_raw_request(host, port, request, expect_close=True, timeout=2):
+    """Sends a raw HTTP request and returns the raw response."""
+    (reader, writer) = await asyncio.open_connection(host, port)
+    writer.write(request.encode("ascii"))
+    await writer.drain()
+    writer.close()
+
+    response = await reader.read()
+
+    return response
+
+
+class TestHTTPServer(unittest.TestCase):
+    HOST = "127.0.0.1"
+    PORT = 8081
+
+    def setUp(self):
+        self.server = webserver()
+
+    def assertRequestResponse(self, req, expected):
+        host = TestHTTPServer.HOST
+        port = TestHTTPServer.PORT
+        self.server.run(host=host, port=port, loop_forever=False)
+
+        async def send_request():
+            async with self.server.server:  # type: ignore
+                resp = await send_raw_request(host, port, req)
+
+            return resp
+
+        resp = asyncio.run(send_request())
+
+        self.assertEqual(resp, expected)
+
+    def test_foo(self):
+        self.assertRequestResponse(
+            "GET / HTTP/1.1\r\n\r\n", b"HTTP/1.0 404 MSG\r\n\r\n"
+        )
+
+    def test_get(self):
+        @self.server.route("/")
+        async def hello(req, resp):
+            await resp._send_headers()
+            await resp.send("hello")
+
+        self.assertRequestResponse(
+            "GET / HTTP/1.1\r\n\r\n", b"HTTP/1.0 200 MSG\r\n\r\nhello"
+        )
+
+
 # We want to test decorators as well
 server_for_decorators = webserver()
 
