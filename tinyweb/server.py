@@ -30,9 +30,6 @@ Params = TypedDict(
     "Params",
     {
         "save_headers": list[bytes],
-        "allowed_access_control_headers": str,
-        "allowed_access_control_origins": str,
-        "allowed_access_control_methods": str,
     },
 )
 
@@ -192,20 +189,15 @@ class request:
     """HTTP Request class"""
 
     def __init__(self, _reader):
-        self.handler: None | Callable = None
         self.reader: asyncio.StreamReader = _reader
-        self.headers = {}
+        # headers are 'None' until `read_headers` is called
+        self.headers: None | dict[bytes, bytes] = None
         self.method: bytes = b""
         self.path: bytes = b""
-        # parsed named path parameters (if the route defines any)
-        self.path_params: PathParameters = []
         self.query_string = b""
         self.version: Literal["1.0"] | Literal["1.1"] = "1.0"
         self.params: Params = {
             "save_headers": [],
-            "allowed_access_control_headers": "*",
-            "allowed_access_control_origins": "*",
-            "allowed_access_control_methods": "GET",
         }
 
     async def read_request_line(self):
@@ -245,6 +237,7 @@ class request:
         Content-Type: blah
         \r\n
         """
+        self.headers = {}
         while True:
             gc.collect()
             line = await self.reader.readline()
@@ -261,12 +254,12 @@ class request:
 class response:
     """HTTP Response class"""
 
+    VERSION = b"1.0"  # we only support 1.0
+
     def __init__(self, _writer):
         self._writer: asyncio.StreamWriter = _writer
         self.code = 200
-        self.version = "1.0"
         self.headers = {}
-        self.params: dict = {}
 
     async def send(self, content, **kwargs):
         self._writer.write(content)
@@ -284,7 +277,7 @@ class response:
         So combining headers together and send them as single "packet".
         """
         # Request line
-        hdrs = "HTTP/{} {} MSG\r\n".format(self.version, self.code)
+        hdrs = "HTTP/{} {} MSG\r\n".format(response.VERSION.decode(), self.code)
         # Headers
         for k, v in self.headers.items():
             hdrs += "{}: {}\r\n".format(k, v)
@@ -341,22 +334,6 @@ class response:
             resp.add_header('Content-Encoding', 'gzip')
         """
         self.headers[key] = value
-
-    def add_access_control_headers(self):
-        """Add Access Control related HTTP response headers.
-        This is required when working with RestApi (JSON requests)
-        """
-        self.add_header(
-            "Access-Control-Allow-Origin", self.params["allowed_access_control_origins"]
-        )
-        self.add_header(
-            "Access-Control-Allow-Methods",
-            self.params["allowed_access_control_methods"],
-        )
-        self.add_header(
-            "Access-Control-Allow-Headers",
-            self.params["allowed_access_control_headers"],
-        )
 
     async def start_html(self):
         """Start response with HTML content type.
@@ -449,11 +426,11 @@ class webserver:
         self.routes: list[Route] = []
         self.catch_all_handler = None
 
-    def _find_url_handler(
-        self, req
-    ) -> tuple[Handler, Params, PathParameters] | HTTPException:
+    def _find_url_handler(self, req) -> tuple[Handler, Params, PathParameters]:
         """Helper to find URL handler.
         Returns tuple of (function, params) or HTTPException (404 or 405) if not found.
+
+        raises: HTTPException
         """
 
         # we only support basic (GET, PUT, etc) requests
@@ -462,7 +439,7 @@ class webserver:
             or req.method == b"OPTIONS"
             or req.method == b"TRACE"
         ):
-            return HTTPException(501)
+            raise HTTPException(501)
 
         # tracks whether there was an exact path match to differentiate
         # between 404 and 405
@@ -480,36 +457,12 @@ class webserver:
             return self.catch_all_handler
 
         if path_matched:
-            return HTTPException(405)
+            raise HTTPException(405)
 
         # No handler found
-        return HTTPException(404)
+        raise HTTPException(404)
 
-    async def _handle_request(self, req, resp):
-        try:
-            await req.read_request_line()
-        except HTTPException as e:
-            await req.read_headers()
-            raise e
-
-        # Find URL handler
-        result = self._find_url_handler(req)
-
-        if isinstance(result, HTTPException):
-            # No URL handler found - read response and issue HTTP 404
-            await req.read_headers()
-            raise result
-
-        (handler, req_params, path_params) = result
-
-        req.handler = handler
-        req.params = req_params
-        req.path_params = path_params
-        resp.params = req.params
-        # Read / parse headers
-        await req.read_headers(req.params.get("save_headers") or [])
-
-    async def _handler(self, reader, writer):
+    async def _handle_connection(self, reader, writer):
         """Handler for TCP connection with
         HTTP/1.0 protocol implementation
         """
@@ -518,20 +471,16 @@ class webserver:
         try:
             req = request(reader)
             resp = response(writer)
-            # Read HTTP Request with timeout
-            await asyncio.wait_for(
-                self._handle_request(req, resp), self.request_timeout
-            )
+            await req.read_request_line()
 
-            if not req.handler:
-                raise HTTPException(500)
+            # Find URL handler and parse headers
+            (handler, req_params, path_params) = self._find_url_handler(req)
+            await req.read_headers(req_params.get("save_headers") or [])
 
-            # Handle URL
-            gc.collect()
+            gc.collect()  # free up some memory before the handler runs
 
-            resp.version = req.version
-            path_param_values = [v.decode() for (_, v) in req.path_params]
-            await req.handler(req, resp, *path_param_values)
+            path_param_values = [v.decode() for (_, v) in path_params]
+            await handler(req, resp, *path_param_values)
             # Done here
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
@@ -547,6 +496,8 @@ class webserver:
                     )
         except HTTPException as e:
             try:
+                if req.headers is None:
+                    await req.read_headers()
                 await resp.error(e.code)
             except Exception as e:
                 log.exception(
@@ -570,7 +521,6 @@ class webserver:
         f,
         methods: list[str] = ["GET"],
         save_headers: list[str | bytes] = [],
-        **kwargs,
     ):
         """Add URL to function mapping.
 
@@ -581,25 +531,18 @@ class webserver:
         Keyword arguments:
             methods - list of allowed methods. Defaults to ['GET', 'POST']
             save_headers - contains list of HTTP headers to be saved. Case sensitive. Default - empty.
-            allowed_access_control_headers - Default value for the same name header. Defaults to *
-            allowed_access_control_origins - Default value for the same name header. Defaults to *
         """
         if url == "" or "?" in url:
             raise ValueError("Invalid URL")
         _save_headers = [x.encode() if isinstance(x, str) else x for x in save_headers]
         _save_headers = [x.lower() for x in _save_headers]
         # Initial params for route
-        params = {
+        params: Params = {
             "save_headers": _save_headers,
-            "allowed_access_control_headers": "*",
-            "allowed_access_control_origins": "*",
         }
-        params["allowed_access_control_methods"] = ", ".join(methods)
-        params.update(kwargs)
 
-        _params: Params = params  # type: ignore
         for method in [x.encode().upper() for x in methods]:
-            self.routes.append((method, url.encode(), f, _params))
+            self.routes.append((method, url.encode(), f, params))
 
     def catchall(self):
         """Decorator for catchall()
@@ -611,10 +554,8 @@ class webserver:
                 await response.start_html()
                 await response.send('<html><body><h1>My custom 404!</h1></html>\n')
         """
-        params = {
+        params: Params = {
             "save_headers": [],
-            "allowed_access_control_headers": "*",
-            "allowed_access_control_origins": "*",
         }
 
         def _route(f):
@@ -648,7 +589,9 @@ class webserver:
             loop_forever - run loo.loop_forever(), otherwise caller must run it by itself.
         """
         self.server = asyncio.run(
-            asyncio.start_server(self._handler, host, port, backlog=self.backlog)
+            asyncio.start_server(
+                self._handle_connection, host, port, backlog=self.backlog
+            )
         )
         if loop_forever:
             self.loop.run_forever()
