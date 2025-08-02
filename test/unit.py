@@ -253,8 +253,8 @@ class ServerParts(unittest.TestCase):
         for j in junk:
             rq = request(mockReader([]))
             rq.path = j.encode()
-            result = srv._find_url_handler(rq)
-            self.assertIsInstance(result, HTTPException)
+            with self.assertRaises(HTTPException):
+                srv._find_url_handler(rq)
 
     def testUrlFinderNegative(self):
         srv = webserver()
@@ -375,7 +375,7 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(["GET /uid/man1 HTTP/1.1\r\n", HDRE])
         wrt = mockWriter()
         # "Send" request
-        asyncio.run(server_for_decorators._handler(rdr, wrt))
+        asyncio.run(server_for_decorators._handle_connection(rdr, wrt))
         # Ensure that proper response "sent"
         expected = [
             "HTTP/1.0 200 MSG\r\n" + "Content-Type: text/html\r\n\r\n",
@@ -389,7 +389,7 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(["GET /uid2/man2 HTTP/1.1\r\n", HDRE])
         wrt = mockWriter()
         # "Send" request
-        asyncio.run(server_for_decorators._handler(rdr, wrt))
+        asyncio.run(server_for_decorators._handle_connection(rdr, wrt))
         # Ensure that proper response "sent"
         expected = [
             "HTTP/1.0 200 MSG\r\n" + "Content-Type: text/html\r\n\r\n",
@@ -415,14 +415,14 @@ class ServerFull(unittest.TestCase):
 
         rdr = mockReader(["GET / HTTP/1.1\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(server._handler(rdr, wrt))
+        asyncio.run(server._handle_connection(rdr, wrt))
         expected = ["HTTP/1.0 200 MSG\r\n\r\n", "hi from GET"]
         self.assertEqual(wrt.history, expected)
         self.assertTrue(wrt.closed)
 
         rdr = mockReader(["POST / HTTP/1.1\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(server._handler(rdr, wrt))
+        asyncio.run(server._handle_connection(rdr, wrt))
         expected = ["HTTP/1.0 200 MSG\r\n\r\n", "hi from POST"]
         self.assertEqual(wrt.history, expected)
         self.assertTrue(wrt.closed)
@@ -439,7 +439,7 @@ class ServerFull(unittest.TestCase):
 
         rdr = mockReader(["GET /this/is/an/invalid/url HTTP/1.1\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(server_for_catchall_decorator._handler(rdr, wrt))
+        asyncio.run(server_for_catchall_decorator._handle_connection(rdr, wrt))
         expected = ["HTTP/1.0 200 MSG\r\n" + "Content-Type: text/html\r\n\r\n", "my404"]
         self.assertEqual(wrt.history, expected)
         self.assertTrue(wrt.closed)
@@ -463,7 +463,7 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(["GET / HTTP/1.1\r\n", HDR("Host: blah.com"), HDRE])
         wrt = mockWriter()
         # "Send" request
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handle_connection(rdr, wrt))
         # Ensure that proper response "sent"
         self.assertEqual(wrt.history, self.hello_world_history)
         self.assertTrue(wrt.closed)
@@ -474,7 +474,7 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(["GET / HTTP/1.1\r\n", HDR("Host: blah.com"), HDRE])
         wrt = mockWriter()
         # "Send" request
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handle_connection(rdr, wrt))
         # Ensure that proper response "sent"
         exp = [
             "HTTP/1.0 302 MSG\r\n" + "Location: /blahblah\r\nContent-Length: 5\r\n\r\n",
@@ -492,7 +492,7 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(["GET /db/user1 HTTP/1.1\r\n", HDR("Host: junk.com"), HDRE])
         wrt = mockWriter()
         # "Send" request
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handle_connection(rdr, wrt))
         # Ensure that proper response "sent"
         expected = [
             "HTTP/1.0 200 MSG\r\n" + "Content-Type: text/html\r\n\r\n",
@@ -515,7 +515,7 @@ class ServerFull(unittest.TestCase):
         )
         # "Send" request
         wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handle_connection(rdr, wrt))
         self.assertTrue(self.dummy_called)
         # Check for headers - only 2 of 3 should be collected, others - ignore
         hdrs = {b"H1": b"blah.com", b"H2": b"lalalla"}
@@ -529,7 +529,7 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(["GET / HTTP/1.0\r\n", HDRE])
         # "Send" GET request, by default GET is enabled
         wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handle_connection(rdr, wrt))
         self.assertEqual(wrt.history, self.hello_world_history)
         self.assertTrue(wrt.closed)
 
@@ -537,7 +537,7 @@ class ServerFull(unittest.TestCase):
         self.dummy_called = False
         rdr = mockReader(["GET /post_only HTTP/1.1\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handle_connection(rdr, wrt))
         # Hanlder should not be called - method not allowed
         self.assertFalse(self.dummy_called)
         exp = ["HTTP/1.0 405 MSG\r\n\r\n"]
@@ -551,7 +551,7 @@ class ServerFull(unittest.TestCase):
             ["GET /not_existing HTTP/1.1\r\n", HDR("Host: blah.com"), HDRE]
         )
         wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handle_connection(rdr, wrt))
         exp = ["HTTP/1.0 404 MSG\r\n\r\n"]
         self.assertEqual(wrt.history, exp)
         # Connection must be closed
@@ -561,7 +561,7 @@ class ServerFull(unittest.TestCase):
         """Verify that malformed request generates proper response"""
         rdr = mockReader(["GET /\r\n", HDR("Host: blah.com"), HDRE])
         wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handle_connection(rdr, wrt))
         exp = ["HTTP/1.0 400 MSG\r\n\r\n"]
         self.assertEqual(wrt.history, exp)
         # Connection must be closed
@@ -578,7 +578,7 @@ class ServerFull(unittest.TestCase):
         srv.add_route("/", hello)
         rdr = mockReader(["GET / HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(srv._handler(rdr, wrt))
+        asyncio.run(srv._handle_connection(rdr, wrt))
         exp = [
             "HTTP/1.0 200 MSG\r\nContent-Type: text/plain\r\n\r\n",
             "hello",
@@ -596,7 +596,7 @@ class ServerFull(unittest.TestCase):
         srv.add_route("/echo/<param>", echo)
         rdr = mockReader(["GET /echo/123 HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(srv._handler(rdr, wrt))
+        asyncio.run(srv._handle_connection(rdr, wrt))
         exp = [
             "HTTP/1.0 200 MSG\r\nContent-Type: text/plain\r\n\r\n",
             "123",
@@ -613,7 +613,7 @@ class ServerFull(unittest.TestCase):
             await resp._send_headers()
 
         srv.add_route("/", get)
-        asyncio.run(srv._handler(rdr, wrt))
+        asyncio.run(srv._handle_connection(rdr, wrt))
         exp = ["HTTP/1.0 405 MSG\r\n\r\n"]
         self.assertEqual(wrt.history, exp)
 
@@ -626,7 +626,7 @@ class ServerFull(unittest.TestCase):
             raise Exception("This is an error")
 
         srv.add_route("/err", err)
-        asyncio.run(srv._handler(rdr, wrt))
+        asyncio.run(srv._handle_connection(rdr, wrt))
         exp = ["HTTP/1.0 500 MSG\r\n\r\n"]
         self.assertEqual(wrt.history, exp)
 
@@ -663,7 +663,7 @@ class StaticContent(unittest.TestCase):
         self.srv.add_route("/", self.send_file_handler)
         rdr = mockReader(["GET / HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handle_connection(rdr, wrt))
 
         exp = [
             "HTTP/1.0 200 MSG\r\n" + "Cache-Control: max-age=100, public\r\n"
@@ -683,7 +683,7 @@ class StaticContent(unittest.TestCase):
 
         # Intentionally delete file before request
         delete_file(self.tempfn)
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handle_connection(rdr, wrt))
 
         exp = ["HTTP/1.0 404 MSG\r\n\r\n"]
         self.assertEqual(wrt.history, exp)
@@ -695,7 +695,7 @@ class StaticContent(unittest.TestCase):
         # tell mockWrite to raise error during send()
         wrt = mockWriter(generate_exception=OSError(errno.ECONNRESET))
 
-        asyncio.run(self.srv._handler(rdr, wrt))
+        asyncio.run(self.srv._handle_connection(rdr, wrt))
 
         # there should be no payload due to connected reset
         self.assertEqual(wrt.history, [])
