@@ -303,6 +303,11 @@ class TestHTTPServer(unittest.TestCase):
         else:
             self.assertEqual(resp, expected)
 
+    def test_bad_method(self):
+        self.assertRequestResponse(
+            "GOT / HTTP/1.1\r\n\r\n", b"HTTP/1.0 400 MSG\r\n\r\n"
+        )
+
     def test_http_1_0_request(self):
         request = "GET / HTTP/1.0\r\n\r\n"
         self.assertRequestResponse(request, lambda resp: resp.startswith("HTTP/1.0"))
@@ -324,6 +329,21 @@ class TestHTTPServer(unittest.TestCase):
 
         self.assertRequestResponse(
             "GET / HTTP/1.1\r\n\r\n", b"HTTP/1.0 200 MSG\r\n\r\nhello"
+        )
+
+    def test_method_not_allowed(self):
+        @self.server.route("/")
+        async def hello(req, resp):
+            await resp._send_headers()
+            await resp.send("hello")
+
+        self.assertRequestResponse(
+            "POST / HTTP/1.1\r\n\r\n", b"HTTP/1.0 405 MSG\r\n\r\n"
+        )
+
+    def test_connect_unimplemented(self):
+        self.assertRequestResponse(
+            "CONNECT www.example.com:443 HTTP/1.1\r\n\r\n", b"HTTP/1.0 501 MSG\r\n\r\n"
         )
 
 
@@ -525,25 +545,6 @@ class ServerFull(unittest.TestCase):
         # Connection must be closed
         self.assertTrue(wrt.closed)
 
-    def testAutoOptionsMethod(self):
-        """Test auto implementation of OPTIONS method"""
-        self.srv.add_route(
-            "/", self.hello_world_handler, methods=["POST", "PUT", "DELETE"]
-        )
-        self.srv.add_route("/disabled", self.hello_world_handler)
-        rdr = mockReader(["OPTIONS / HTTP/1.0\r\n", HDRE])
-        wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
-
-        exp = [
-            "HTTP/1.0 200 MSG\r\n" + "Access-Control-Allow-Headers: *\r\n"
-            "Content-Length: 0\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "Access-Control-Allow-Methods: POST, PUT, DELETE\r\n\r\n"
-        ]
-        self.assertEqual(wrt.history, exp)
-        self.assertTrue(wrt.closed)
-
     def testPageNotFound(self):
         """Verify that malformed request generates proper response"""
         rdr = mockReader(
@@ -565,20 +566,6 @@ class ServerFull(unittest.TestCase):
         self.assertEqual(wrt.history, exp)
         # Connection must be closed
         self.assertTrue(wrt.closed)
-
-    def testOptions(self):
-        # Ensure that only GET/POST methods are allowed:
-        srv = webserver()
-        rdr = mockReader(["OPTIONS / HTTP/1.0\r\n", HDRE])
-        wrt = mockWriter()
-        asyncio.run(srv._handler(rdr, wrt))
-        exp = [
-            "HTTP/1.0 200 MSG\r\n" + "Access-Control-Allow-Headers: *\r\n"
-            "Content-Length: 0\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "Access-Control-Allow-Methods: POST, PUT, DELETE\r\n\r\n"
-        ]
-        self.assertEqual(wrt.history, exp)
 
     def testGet(self):
         srv = webserver()

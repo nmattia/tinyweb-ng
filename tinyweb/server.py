@@ -137,7 +137,7 @@ SUPPORTED_METHODS = [
     b"POST",
     b"PUT",
     b"DELETE",
-    b"CONNECTION",
+    b"CONNECT",
     b"OPTIONS",
     b"TRACE",
 ]
@@ -456,25 +456,13 @@ class webserver:
         Returns tuple of (function, params) or HTTPException (404 or 405) if not found.
         """
 
-        async def handle_options(req, resp):
-            resp.add_access_control_headers()
-            # Since we support only HTTP 1.0 - it is important
-            # to tell browser that there is no payload expected
-            # otherwise some webkit based browsers (Chrome)
-            # treat this behavior as an error
-            resp.add_header("Content-Length", "0")
-            await resp._send_headers()
-            return
-
-        if req.method == b"OPTIONS":
-            params: Params = {
-                "save_headers": [],
-                "allowed_access_control_headers": "*",
-                "allowed_access_control_origins": "*",
-                "allowed_access_control_methods": "POST, PUT, DELETE",
-            }
-
-            return (handle_options, params, [])
+        # we only support basic (GET, PUT, etc) requests
+        if (
+            req.method == b"CONNECT"
+            or req.method == b"OPTIONS"
+            or req.method == b"TRACE"
+        ):
+            return HTTPException(501)
 
         # tracks whether there was an exact path match to differentiate
         # between 404 and 405
@@ -498,7 +486,12 @@ class webserver:
         return HTTPException(404)
 
     async def _handle_request(self, req, resp):
-        await req.read_request_line()
+        try:
+            await req.read_request_line()
+        except HTTPException as e:
+            await req.read_headers()
+            raise e
+
         # Find URL handler
         result = self._find_url_handler(req)
 
