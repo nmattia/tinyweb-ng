@@ -13,7 +13,17 @@ import uerrno as errno
 # TYPING_START
 # typing related lines that get stripped during build
 # (micropython doesn't support them)
-from typing import Callable, TypedDict
+from typing import Callable, TypedDict, Literal
+
+# As per https://www.rfc-editor.org/rfc/rfc9112.html#name-request-line
+RequestLine = TypedDict(
+    "RequestLine",
+    {
+        "method": bytes,
+        "target": bytes,
+        "version": tuple[int, int],  # major.minor
+    },
+)
 
 type Handler = Callable
 Params = TypedDict(
@@ -122,6 +132,64 @@ class HTTPException(Exception):
         self.code = code
 
 
+# per https://www.rfc-editor.org/rfc/rfc9110#table-4
+SUPPORTED_METHODS = [
+    b"GET",
+    b"HEAD",
+    b"POST",
+    b"PUT",
+    b"DELETE",
+    b"CONNECTION",
+    b"OPTIONS",
+    b"TRACE",
+]
+
+
+def parse_request_line(line: bytes) -> RequestLine | None:
+    """
+    As per https://www.rfc-editor.org/rfc/rfc9112.html#name-request-line
+        request-line   = method SP request-target SP HTTP-version
+    where SP is "single space"
+    where method is defined in https://www.rfc-editor.org/rfc/rfc9110#section-9
+    where request-target is arbitrary for our purposes
+    where HTTP-version is 'HTTP-version  = HTTP-name "/" DIGIT "." DIGIT'
+        (https://www.rfc-editor.org/rfc/rfc9112.html#name-http-version)
+    """
+    fragments = line.split(b" ")
+    if len(fragments) != 3:
+        return None
+
+    if fragments[0] not in SUPPORTED_METHODS:
+        return None
+
+    if not fragments[1]:
+        return None
+
+    http_version_fragments = fragments[2].split(b"/")
+    if len(http_version_fragments) != 2:
+        return None
+
+    if http_version_fragments[0] != b"HTTP":
+        return None
+
+    version_fragments = http_version_fragments[1].split(b".")
+
+    if len(version_fragments) != 2:
+        return None
+
+    try:
+        version_major = int(version_fragments[0])
+        version_minor = int(version_fragments[1])
+    except ValueError: # failed to parse as int
+        return None
+
+    return {
+        "method": fragments[0],
+        "target": fragments[1],
+        "version": (version_major, version_minor),
+    }
+
+
 class request:
     """HTTP Request class"""
 
@@ -134,6 +202,7 @@ class request:
         # parsed named path parameters (if the route defines any)
         self.path_params: PathParameters = []
         self.query_string = b""
+        self.version: Literal["1.0"] | Literal["1.1"] = "1.0"
         self.params: Params = {
             "methods": [b"GET"],
             "save_headers": [],
@@ -144,23 +213,26 @@ class request:
         }
 
     async def read_request_line(self):
-        """Read and parse first line (AKA HTTP Request Line).
-        Function is generator.
+        """
+        Read and parse first line (AKA HTTP Request Line).
 
-        Request line is something like:
-        GET /something/script?param1=val1 HTTP/1.1
+        This updates the 'self' with the data. May raise a 400.
         """
         while True:
-            rl = await self.reader.readline()
+            rl_raw = await self.reader.readline()
             # skip empty lines
-            if rl == b"\r\n" or rl == b"\n":
+            if rl_raw == b"\r\n" or rl_raw == b"\n":
                 continue
             break
-        rl_frags = rl.split()
-        if len(rl_frags) != 3:
+
+        rl = parse_request_line(rl_raw)
+        if not rl:
             raise HTTPException(400)
-        self.method = rl_frags[0]
-        url_frags = rl_frags[1].split(b"?", 1)
+
+        self.method = rl["method"]
+
+        url_frags = rl["target"].split(b"?", 1)
+
         self.path = url_frags[0]
         if len(url_frags) > 1:
             self.query_string = url_frags[1]
@@ -470,6 +542,7 @@ class webserver:
             # Handle URL
             gc.collect()
 
+            resp.version = req.version
             path_param_values = [v.decode() for (_, v) in req.path_params]
             await req.handler(req, resp, *path_param_values)
             # Done here
