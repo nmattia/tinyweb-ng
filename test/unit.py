@@ -54,26 +54,33 @@ class mockReader:
 class mockWriter:
     """Mock for coroutine writer class"""
 
-    def __init__(self, generate_expection=None):
+    def __init__(self, generate_exception=None):
         """
         keyword arguments:
-            generate_expection - raise exception when calling send()
+            generate_exception - raise exception when calling send()
         """
         self.s = 1
         self.history = []
         self.closed = False
-        self.generate_expection = generate_expection
+        self.generate_exception = generate_exception
+        self.buffered = []
 
-    async def awrite(self, buf, off=0, sz=-1):
-        if sz == -1:
-            sz = len(buf) - off
-        if self.generate_expection:
-            raise self.generate_expection
-        # Save biffer into history - so to be able to assert then
-        self.history.append(buf[:sz])
+    def write(self, buf):
+        self.buffered.append(buf)
 
-    async def aclose(self):
+    async def drain(self):
+        if self.generate_exception:
+            raise self.generate_exception
+        self.history += self.buffered
+        self.buffered = []
+
+    def close(self):
         self.closed = True
+
+    async def wait_closed(self):
+        if not self.closed:
+            raise Exception("Not implemented")
+        return
 
 
 # Tests
@@ -668,7 +675,7 @@ class StaticContent(unittest.TestCase):
         self.srv.add_route("/", self.send_file_handler)
         rdr = mockReader(["GET / HTTP/1.0\r\n", HDRE])
         # tell mockWrite to raise error during send()
-        wrt = mockWriter(generate_expection=OSError(errno.ECONNRESET))
+        wrt = mockWriter(generate_exception=OSError(errno.ECONNRESET))
 
         asyncio.run(self.srv._handler(rdr, wrt))
 
