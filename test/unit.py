@@ -530,9 +530,7 @@ class ServerFull(unittest.TestCase):
         self.srv.add_route(
             "/", self.hello_world_handler, methods=["POST", "PUT", "DELETE"]
         )
-        self.srv.add_route(
-            "/disabled", self.hello_world_handler, auto_method_options=False
-        )
+        self.srv.add_route("/disabled", self.hello_world_handler)
         rdr = mockReader(["OPTIONS / HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
         asyncio.run(self.srv._handler(rdr, wrt))

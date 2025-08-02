@@ -29,8 +29,6 @@ type Handler = Callable
 Params = TypedDict(
     "Params",
     {
-        "max_body_size": int,
-        "methods": list[bytes],
         "save_headers": list[bytes],
         "allowed_access_control_headers": str,
         "allowed_access_control_origins": str,
@@ -180,7 +178,7 @@ def parse_request_line(line: bytes) -> RequestLine | None:
     try:
         version_major = int(version_fragments[0])
         version_minor = int(version_fragments[1])
-    except ValueError: # failed to parse as int
+    except ValueError:  # failed to parse as int
         return None
 
     return {
@@ -204,9 +202,7 @@ class request:
         self.query_string = b""
         self.version: Literal["1.0"] | Literal["1.1"] = "1.0"
         self.params: Params = {
-            "methods": [b"GET"],
             "save_headers": [],
-            "max_body_size": 1024,
             "allowed_access_control_headers": "*",
             "allowed_access_control_origins": "*",
             "allowed_access_control_methods": "GET",
@@ -472,9 +468,7 @@ class webserver:
 
         if req.method == b"OPTIONS":
             params: Params = {
-                "methods": [b"GET"],
                 "save_headers": [],
-                "max_body_size": 1024,
                 "allowed_access_control_headers": "*",
                 "allowed_access_control_origins": "*",
                 "allowed_access_control_methods": "POST, PUT, DELETE",
@@ -582,7 +576,7 @@ class webserver:
         url: str,
         f,
         methods: list[str] = ["GET"],
-        save_headers: list[str] = [],
+        save_headers: list[str | bytes] = [],
         **kwargs,
     ):
         """Add URL to function mapping.
@@ -594,29 +588,24 @@ class webserver:
         Keyword arguments:
             methods - list of allowed methods. Defaults to ['GET', 'POST']
             save_headers - contains list of HTTP headers to be saved. Case sensitive. Default - empty.
-            max_body_size - Max HTTP body size (e.g. POST form data). Defaults to 1024
             allowed_access_control_headers - Default value for the same name header. Defaults to *
             allowed_access_control_origins - Default value for the same name header. Defaults to *
         """
         if url == "" or "?" in url:
             raise ValueError("Invalid URL")
+        _save_headers = [x.encode() if isinstance(x, str) else x for x in save_headers]
+        _save_headers = [x.lower() for x in _save_headers]
         # Initial params for route
         params = {
-            "methods": methods,
-            "save_headers": save_headers,
-            "max_body_size": 1024,
+            "save_headers": _save_headers,
             "allowed_access_control_headers": "*",
             "allowed_access_control_origins": "*",
         }
         params["allowed_access_control_methods"] = ", ".join(methods)
-        # Convert methods/headers to bytestring
-        methods_bytes: list[bytes] = [x.encode().upper() for x in methods]
-        params["methods"] = methods_bytes
         params.update(kwargs)
-        params["save_headers"] = [x.encode().lower() for x in save_headers]
 
         _params: Params = params  # type: ignore
-        for method in methods_bytes:
+        for method in [x.encode().upper() for x in methods]:
             self.routes.append((method, url.encode(), f, _params))
 
     def catchall(self):
@@ -630,9 +619,7 @@ class webserver:
                 await response.send('<html><body><h1>My custom 404!</h1></html>\n')
         """
         params = {
-            "methods": [b"GET"],
             "save_headers": [],
-            "max_body_size": 1024,
             "allowed_access_control_headers": "*",
             "allowed_access_control_origins": "*",
         }
