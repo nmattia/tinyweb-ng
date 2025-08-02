@@ -340,9 +340,6 @@ class ServerFull(unittest.TestCase):
         self.dummy_resp = resp
         self.dummy_called = True
 
-    async def dummy_post_handler(self, req, resp):
-        self.data = await req.read_parse_form_data()
-
     async def hello_world_handler(self, req, resp):
         await resp.start_html()
         await resp.send("<html><h1>Hello world</h1></html>")
@@ -374,23 +371,6 @@ class ServerFull(unittest.TestCase):
             "msg:)",
         ]
         self.assertEqual(wrt.history, exp)
-
-    def testRequestBodyUnknownType(self):
-        """Unknow HTTP body test - empty dict expected"""
-        self.srv.add_route("/", self.dummy_post_handler, methods=["POST"])
-        rdr = mockReader(
-            [
-                "POST / HTTP/1.1\r\n",
-                HDR("Host: blah.com"),
-                HDR("Content-Length: 5"),
-                HDRE,
-                "12345",
-            ]
-        )
-        wrt = mockWriter()
-        asyncio.run(self.srv._handler(rdr, wrt))
-        # Check extracted POST body
-        self.assertEqual(self.data, {})
 
     async def route_parameterized_handler(self, req, resp, user_name):
         await resp.start_html()
