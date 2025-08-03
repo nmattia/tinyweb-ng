@@ -324,7 +324,6 @@ class TestHTTPServer(unittest.TestCase):
     def test_get(self):
         @self.server.route("/")
         async def hello(req, resp):
-            await resp._send_headers()
             await resp.send("hello")
 
         self.assertRequestResponse(
@@ -334,7 +333,6 @@ class TestHTTPServer(unittest.TestCase):
     def test_method_not_allowed(self):
         @self.server.route("/")
         async def hello(req, resp):
-            await resp._send_headers()
             await resp.send("hello")
 
         self.assertRequestResponse(
@@ -344,6 +342,15 @@ class TestHTTPServer(unittest.TestCase):
     def test_connect_unimplemented(self):
         self.assertRequestResponse(
             "CONNECT www.example.com:443 HTTP/1.1\r\n\r\n", b"HTTP/1.0 501 MSG\r\n\r\n"
+        )
+
+    def test_empty_response_body(self):
+        @self.server.route("/")
+        async def hello(req, resp):
+            pass
+
+        self.assertRequestResponse(
+            "GET / HTTP/1.1\r\n\r\n", b"HTTP/1.0 200 MSG\r\n\r\n"
         )
 
 
@@ -418,12 +425,10 @@ class ServerFull(unittest.TestCase):
 
         @server.route("/", methods=["GET"])
         async def get(req, resp):
-            await resp._send_headers()
             await resp.send("hi from GET")
 
         @server.route("/", methods=["POST"])
         async def post(req, resp):
-            await resp._send_headers()
             await resp.send("hi from POST")
 
         rdr = mockReader(["GET / HTTP/1.1\r\n", HDRE])
@@ -612,7 +617,6 @@ class ServerFull(unittest.TestCase):
 
         async def hello(req, resp):
             resp.add_header("Content-Type", "text/plain")
-            await resp._send_headers()
             await resp.send("hello")
 
         srv.add_route("/", hello)
@@ -632,7 +636,6 @@ class ServerFull(unittest.TestCase):
 
         async def echo(req, resp, param):
             resp.add_header("Content-Type", "text/plain")
-            await resp._send_headers()
             await resp.send(param)
 
         srv.add_route("/echo/<param>", echo)
@@ -654,7 +657,6 @@ class ServerFull(unittest.TestCase):
 
         async def get(req, resp):
             resp.add_header("Content-Type", "text/plain")
-            await resp._send_headers()
 
         srv.add_route("/", get)
         asyncio.run(srv._handle_connection(rdr, wrt))
@@ -716,7 +718,7 @@ class StaticContent(unittest.TestCase):
         asyncio.run(self.srv._handle_connection(rdr, wrt))
 
         exp = [
-            "HTTP/1.0 200 MSG\r\n"
+            "HTTP/1.0 200 MSG\r\n",
             "Cache-Control: max-age=100, public\r\n"
             "Content-Type: text/plain\r\n"
             "Content-Length: 21\r\n"
@@ -736,7 +738,7 @@ class StaticContent(unittest.TestCase):
         delete_file(self.tempfn)
         asyncio.run(self.srv._handle_connection(rdr, wrt))
 
-        exp = ["HTTP/1.0 404 MSG\r\n\r\n"]
+        exp = ["HTTP/1.0 404 MSG\r\n", "\r\n"]
         self.assertEqual(wrt.history, exp)
         self.assertTrue(wrt.closed)
 

@@ -258,33 +258,69 @@ class response:
 
     def __init__(self, _writer):
         self._writer: asyncio.StreamWriter = _writer
-        self.code = 200
-        self.headers = {}
+
+        # Set to 'None' once the request line has been sent
+        self._status_code: int | None = 200
+
+        # Set to 'None' once the headers have been sent
+        self.headers: dict[str, str] | None = {}
+
+    async def _ensure_ready_for_body(self):
+        status_line_sent = self._status_code is None
+        headers_sent = self.headers is None
+
+        if not status_line_sent:
+            if headers_sent:
+                raise Exception("Headers were sent before status line")
+            await self._send_status_line()
+
+        if not headers_sent:
+            await self._send_headers()
+
+    def set_status_code(self, value: int):
+        if self._status_code is None:
+            raise Exception("status line already sent")
+
+        self._status_code = value
 
     async def send(self, content, **kwargs):
+        await self._ensure_ready_for_body()
+
         self._writer.write(content)
         await self._writer.drain()
 
-    async def _send_headers(self):
-        """Compose and send:
-        - HTTP request line
-        - HTTP headers following by \r\n.
-        This function is generator.
+    async def _send_status_line(self):
+        if self._status_code is None:
+            raise Exception("status line already sent")
 
-        P.S.
-        Because of usually we have only a few HTTP headers (2-5) it doesn't make sense
-        to send them separately - sometimes it could increase latency.
-        So combining headers together and send them as single "packet".
+        _status_code = self._status_code
+        self._status_code = None
+
+        sl = "HTTP/{} {} MSG\r\n".format(response.VERSION.decode(), _status_code)
+        self._writer.write(sl)
+        await self._writer.drain()
+
+    async def _send_headers(self):
         """
-        # Request line
-        hdrs = "HTTP/{} {} MSG\r\n".format(response.VERSION.decode(), self.code)
+        Send headers followed by an empty line.
+        """
+
+        if self.headers is None:
+            raise Exception("Headers already sent")
+
+        _headers = self.headers
+        self.headers = None
+
+        hdrs = ""
         # Headers
-        for k, v in self.headers.items():
+        for k, v in _headers.items():
             hdrs += "{}: {}\r\n".format(k, v)
         hdrs += "\r\n"
+
+        self._writer.write(hdrs)
+        await self._writer.drain()
         # Collect garbage after small mallocs
         gc.collect()
-        await self.send(hdrs)
 
     async def error(self, code, msg=None):
         """Generate HTTP error response
@@ -297,10 +333,16 @@ class response:
             # Not enough permissions. Send HTTP 403 - Forbidden
             await resp.error(403)
         """
-        self.code = code
+        if self._status_code is None or self.headers is None:
+            raise Exception("Status line already sent, cannot set status code")
+
+        self._status_code = code
         if msg:
             self.add_header("Content-Length", len(msg))
+
+        await self._send_status_line()
         await self._send_headers()
+
         if msg:
             await self.send(msg)
 
@@ -315,11 +357,14 @@ class response:
             # Redirect to /something
             await resp.redirect('/something')
         """
-        self.code = 302
+        self._status_code = 302
         self.add_header("Location", location)
         if msg:
             self.add_header("Content-Length", len(msg))
+
+        await self._send_status_line()
         await self._send_headers()
+
         if msg:
             await self.send(msg)
 
@@ -333,6 +378,9 @@ class response:
         Example:
             resp.add_header('Content-Encoding', 'gzip')
         """
+        if self.headers is None:
+            raise Exception("Headers already sent")
+
         self.headers[key] = value
 
     async def start_html(self):
@@ -344,7 +392,6 @@ class response:
             await resp.send('<html><h1>Hello, world!</h1></html>')
         """
         self.add_header("Content-Type", "text/html")
-        await self._send_headers()
 
     async def send_file(
         self,
@@ -390,6 +437,7 @@ class response:
             # override it by setting max_age to zero
             self.add_header("Cache-Control", "max-age={}, public".format(max_age))
             with open(filename) as f:
+                await self._send_status_line()
                 await self._send_headers()
                 gc.collect()
                 buf = bytearray(min(file_len, buf_size))
@@ -481,6 +529,10 @@ class webserver:
 
             path_param_values = [v.decode() for (_, v) in path_params]
             await handler(req, resp, *path_param_values)
+
+            # ensure the status line & headers are sent even if there
+            # was no body
+            await resp._ensure_ready_for_body()
             # Done here
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
@@ -550,7 +602,7 @@ class webserver:
         Example:
             @app.catchall()
             def catchall_handler(req, resp):
-                response.code = 404
+                response._status_code = 404
                 await response.start_html()
                 await response.send('<html><body><h1>My custom 404!</h1></html>\n')
         """
