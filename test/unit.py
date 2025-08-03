@@ -359,13 +359,22 @@ async def route_for_decorator(req, resp, user_id):
 
 
 class ServerFull(unittest.TestCase):
+    def assertHistory(self, wrt, expected):
+        if isinstance(expected, list):
+            self.assertEqual(wrt.history, expected)
+        else:
+            self.assertEqual("".join(wrt.history), expected)
+
     def setUp(self):
         self.dummy_called = False
         self.data = {}
-        self.hello_world_history = [
-            "HTTP/1.0 200 MSG\r\n" + "Content-Type: text/html\r\n\r\n",
-            "<html><h1>Hello world</h1></html>",
-        ]
+        self.hello_world_history = (
+            "HTTP/1.0 200 MSG\r\n"
+            "Content-Type: text/html\r\n"
+            "\r\n"
+            "<html><h1>Hello world</h1></html>"
+        )  # fmt: skip
+
         # Create one more server - to simplify bunch of tests
         self.srv = webserver()
 
@@ -377,11 +386,13 @@ class ServerFull(unittest.TestCase):
         # "Send" request
         asyncio.run(server_for_decorators._handle_connection(rdr, wrt))
         # Ensure that proper response "sent"
-        expected = [
-            "HTTP/1.0 200 MSG\r\n" + "Content-Type: text/html\r\n\r\n",
-            "YO, man1",
-        ]
-        self.assertEqual(wrt.history, expected)
+        expected = (
+            "HTTP/1.0 200 MSG\r\n"
+            "Content-Type: text/html\r\n"
+            "\r\n"
+            "YO, man1"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
         self.assertTrue(wrt.closed)
 
     def testRouteDecorator2(self):
@@ -391,11 +402,13 @@ class ServerFull(unittest.TestCase):
         # "Send" request
         asyncio.run(server_for_decorators._handle_connection(rdr, wrt))
         # Ensure that proper response "sent"
-        expected = [
-            "HTTP/1.0 200 MSG\r\n" + "Content-Type: text/html\r\n\r\n",
-            "YO, man2",
-        ]
-        self.assertEqual(wrt.history, expected)
+        expected = (
+            "HTTP/1.0 200 MSG\r\n"
+            "Content-Type: text/html\r\n"
+            "\r\n"
+            "YO, man2"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
         self.assertTrue(wrt.closed)
 
     def testOverlappingPaths(self):
@@ -416,15 +429,23 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(["GET / HTTP/1.1\r\n", HDRE])
         wrt = mockWriter()
         asyncio.run(server._handle_connection(rdr, wrt))
-        expected = ["HTTP/1.0 200 MSG\r\n\r\n", "hi from GET"]
-        self.assertEqual(wrt.history, expected)
+        expected = (
+            "HTTP/1.0 200 MSG\r\n"
+            "\r\n"
+            "hi from GET"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
         self.assertTrue(wrt.closed)
 
         rdr = mockReader(["POST / HTTP/1.1\r\n", HDRE])
         wrt = mockWriter()
         asyncio.run(server._handle_connection(rdr, wrt))
-        expected = ["HTTP/1.0 200 MSG\r\n\r\n", "hi from POST"]
-        self.assertEqual(wrt.history, expected)
+        expected = (
+            "HTTP/1.0 200 MSG\r\n"
+            "\r\n"
+            "hi from POST"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
         self.assertTrue(wrt.closed)
 
     def testCatchAllDecorator(self):
@@ -440,8 +461,13 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(["GET /this/is/an/invalid/url HTTP/1.1\r\n", HDRE])
         wrt = mockWriter()
         asyncio.run(server_for_catchall_decorator._handle_connection(rdr, wrt))
-        expected = ["HTTP/1.0 200 MSG\r\n" + "Content-Type: text/html\r\n\r\n", "my404"]
-        self.assertEqual(wrt.history, expected)
+        expected = (
+            "HTTP/1.0 200 MSG\r\n"
+            "Content-Type: text/html\r\n"
+            "\r\n"
+            "my404"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
         self.assertTrue(wrt.closed)
 
     async def dummy_handler(self, req, resp):
@@ -465,7 +491,7 @@ class ServerFull(unittest.TestCase):
         # "Send" request
         asyncio.run(self.srv._handle_connection(rdr, wrt))
         # Ensure that proper response "sent"
-        self.assertEqual(wrt.history, self.hello_world_history)
+        self.assertHistory(wrt, self.hello_world_history)
         self.assertTrue(wrt.closed)
 
     def testRedirect(self):
@@ -476,11 +502,14 @@ class ServerFull(unittest.TestCase):
         # "Send" request
         asyncio.run(self.srv._handle_connection(rdr, wrt))
         # Ensure that proper response "sent"
-        exp = [
-            "HTTP/1.0 302 MSG\r\n" + "Location: /blahblah\r\nContent-Length: 5\r\n\r\n",
-            "msg:)",
-        ]
-        self.assertEqual(wrt.history, exp)
+        expected = (
+            "HTTP/1.0 302 MSG\r\n"
+            "Location: /blahblah\r\n"
+            "Content-Length: 5\r\n"
+            "\r\n"
+            "msg:)"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
 
     async def route_parameterized_handler(self, req, resp, user_name):
         await resp.start_html()
@@ -494,11 +523,13 @@ class ServerFull(unittest.TestCase):
         # "Send" request
         asyncio.run(self.srv._handle_connection(rdr, wrt))
         # Ensure that proper response "sent"
-        expected = [
-            "HTTP/1.0 200 MSG\r\n" + "Content-Type: text/html\r\n\r\n",
-            "<html>Hello, user1</html>",
-        ]
-        self.assertEqual(wrt.history, expected)
+        expected = (
+            "HTTP/1.0 200 MSG\r\n"
+            "Content-Type: text/html\r\n"
+            "\r\n"
+            "<html>Hello, user1</html>"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
         self.assertTrue(wrt.closed)
 
     def testParseHeadersOnOff(self):
@@ -530,7 +561,7 @@ class ServerFull(unittest.TestCase):
         # "Send" GET request, by default GET is enabled
         wrt = mockWriter()
         asyncio.run(self.srv._handle_connection(rdr, wrt))
-        self.assertEqual(wrt.history, self.hello_world_history)
+        self.assertHistory(wrt, self.hello_world_history)
         self.assertTrue(wrt.closed)
 
         # "Send" GET request to POST only location
@@ -540,8 +571,11 @@ class ServerFull(unittest.TestCase):
         asyncio.run(self.srv._handle_connection(rdr, wrt))
         # Hanlder should not be called - method not allowed
         self.assertFalse(self.dummy_called)
-        exp = ["HTTP/1.0 405 MSG\r\n\r\n"]
-        self.assertEqual(wrt.history, exp)
+        expected = (
+            "HTTP/1.0 405 MSG\r\n"
+            "\r\n"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
         # Connection must be closed
         self.assertTrue(wrt.closed)
 
@@ -552,8 +586,11 @@ class ServerFull(unittest.TestCase):
         )
         wrt = mockWriter()
         asyncio.run(self.srv._handle_connection(rdr, wrt))
-        exp = ["HTTP/1.0 404 MSG\r\n\r\n"]
-        self.assertEqual(wrt.history, exp)
+        expected = (
+            "HTTP/1.0 404 MSG\r\n"
+            "\r\n"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
         # Connection must be closed
         self.assertTrue(wrt.closed)
 
@@ -562,8 +599,11 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(["GET /\r\n", HDR("Host: blah.com"), HDRE])
         wrt = mockWriter()
         asyncio.run(self.srv._handle_connection(rdr, wrt))
-        exp = ["HTTP/1.0 400 MSG\r\n\r\n"]
-        self.assertEqual(wrt.history, exp)
+        expected = (
+            "HTTP/1.0 400 MSG\r\n"
+            "\r\n"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
         # Connection must be closed
         self.assertTrue(wrt.closed)
 
@@ -579,11 +619,13 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(["GET / HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
         asyncio.run(srv._handle_connection(rdr, wrt))
-        exp = [
-            "HTTP/1.0 200 MSG\r\nContent-Type: text/plain\r\n\r\n",
-            "hello",
-        ]
-        self.assertEqual(wrt.history, exp)
+        expected = (
+            "HTTP/1.0 200 MSG\r\n"
+            "Content-Type: text/plain\r\n"
+            "\r\n"
+            "hello"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
 
     def testGetWithParam(self):
         srv = webserver()
@@ -597,11 +639,13 @@ class ServerFull(unittest.TestCase):
         rdr = mockReader(["GET /echo/123 HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
         asyncio.run(srv._handle_connection(rdr, wrt))
-        exp = [
-            "HTTP/1.0 200 MSG\r\nContent-Type: text/plain\r\n\r\n",
-            "123",
-        ]
-        self.assertEqual(wrt.history, exp)
+        expected = (
+            "HTTP/1.0 200 MSG\r\n"
+            "Content-Type: text/plain\r\n"
+            "\r\n"
+            "123"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
 
     def testInvalidMethod(self):
         rdr = mockReader(["PUT / HTTP/1.0\r\n", HDRE])
@@ -614,8 +658,11 @@ class ServerFull(unittest.TestCase):
 
         srv.add_route("/", get)
         asyncio.run(srv._handle_connection(rdr, wrt))
-        exp = ["HTTP/1.0 405 MSG\r\n\r\n"]
-        self.assertEqual(wrt.history, exp)
+        expected = (
+            "HTTP/1.0 405 MSG\r\n"
+            "\r\n"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
 
     def testException(self):
         rdr = mockReader(["GET /err HTTP/1.0\r\n", HDRE])
@@ -627,8 +674,11 @@ class ServerFull(unittest.TestCase):
 
         srv.add_route("/err", err)
         asyncio.run(srv._handle_connection(rdr, wrt))
-        exp = ["HTTP/1.0 500 MSG\r\n\r\n"]
-        self.assertEqual(wrt.history, exp)
+        expected = (
+            "HTTP/1.0 500 MSG\r\n"
+            "\r\n"
+        )  # fmt: skip
+        self.assertHistory(wrt, expected)
 
 
 class StaticContent(unittest.TestCase):
@@ -666,7 +716,8 @@ class StaticContent(unittest.TestCase):
         asyncio.run(self.srv._handle_connection(rdr, wrt))
 
         exp = [
-            "HTTP/1.0 200 MSG\r\n" + "Cache-Control: max-age=100, public\r\n"
+            "HTTP/1.0 200 MSG\r\n"
+            "Cache-Control: max-age=100, public\r\n"
             "Content-Type: text/plain\r\n"
             "Content-Length: 21\r\n"
             "Content-Encoding: gzip\r\n\r\n",
