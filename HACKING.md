@@ -87,3 +87,10 @@ mpremote mkdir :/srv || true
 mpremote cp ./examples/static/index.html :/srv/index.html
 mpremote run ./examples/webapp.py
 ```
+
+Run the tests on a board:
+
+```
+mpremote mip install unittest
+mpremote run ./test/unit.py
+```
