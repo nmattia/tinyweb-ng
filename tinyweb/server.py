@@ -486,7 +486,6 @@ class webserver:
             debug           - Whether send exception info (text + backtrace)
                               to client together with HTTP 500 or not.
         """
-        self.server: asyncio.Server | None = None
         self.loop = asyncio.get_event_loop()
         self.request_timeout = request_timeout
         self.backlog = backlog
@@ -652,23 +651,17 @@ class webserver:
 
         return _route
 
-    def run(self, host="127.0.0.1", port=8081, loop_forever=True):
-        """Run Web Server. By default it runs forever.
+    def run(self, host="127.0.0.1", port=8081):
+        asyncio.run(self.arun(host, port))
 
-        Keyword arguments:
-            host - host to listen on. By default - localhost (127.0.0.1)
-            port - port to listen on. By default - 8081
-            loop_forever - run loo.loop_forever(), otherwise caller must run it by itself.
-        """
-        self.server = asyncio.run(
+    async def arun(self, host="127.0.0.1", port=8081):
+        await self.start(host, port).wait_closed()
+
+    def start(self, host, port) -> asyncio.Server:
+        server = asyncio.run(
             asyncio.start_server(
                 self._handle_connection, host, port, backlog=self.backlog
             )
         )
-        if loop_forever:
-            self.loop.run_forever()
 
-    def shutdown(self):
-        """Gracefully shutdown Web Server"""
-        if self.server:
-            self.server.close()
+        return server
