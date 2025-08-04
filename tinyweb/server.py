@@ -259,15 +259,23 @@ class response:
     def __init__(self, _writer):
         self._writer: asyncio.StreamWriter = _writer
 
-        # Set to 'None' once the request line has been sent
-        self._status_code: int | None = 200
+        # Request line fields
 
-        # Set to 'None' once the headers have been sent
-        self.headers: dict[str, str] | None = {}
+        self._status_code: int = 200
+        self._reason_phrase: str | None = None  # optional as per HTTP spec
+
+        # Set to 'True' once the request line has been sent
+        self._status_line_sent: bool = False
+
+        # Header fields
+
+        self.headers: dict[str, str] = {}
+        # Set to 'True' once the header lines have been sent
+        self._headers_sent: bool = False
 
     async def _ensure_ready_for_body(self):
-        status_line_sent = self._status_code is None
-        headers_sent = self.headers is None
+        status_line_sent = self._status_line_sent
+        headers_sent = self._headers_sent
 
         if not status_line_sent:
             if headers_sent:
@@ -278,10 +286,19 @@ class response:
             await self._send_headers()
 
     def set_status_code(self, value: int):
-        if self._status_code is None:
+        if self._status_line_sent:
             raise Exception("status line already sent")
 
         self._status_code = value
+
+    def set_reason_phrase(self, value: str):
+        """
+        Set the optional 'reason-phrase' (like 'OK' for 200 or 'NOT FOUND' for 404)
+        """
+        if self._status_line_sent:
+            raise Exception("status line already sent")
+
+        self._reason_phrase = value
 
     async def send(self, content, **kwargs):
         await self._ensure_ready_for_body()
@@ -290,14 +307,19 @@ class response:
         await self._writer.drain()
 
     async def _send_status_line(self):
-        if self._status_code is None:
+        if self._status_line_sent:
             raise Exception("status line already sent")
 
-        _status_code = self._status_code
-        self._status_code = None
+        # even if reason phrase is empty, the "preceding" space must be present
+        # https://www.rfc-editor.org/rfc/rfc9112.html#section-4-9
 
-        sl = "HTTP/{} {} MSG\r\n".format(response.VERSION.decode(), _status_code)
+        sl = "HTTP/%s %s %s\r\n" % (
+            response.VERSION.decode(),
+            self._status_code,
+            self._reason_phrase or "",
+        )
         self._writer.write(sl)
+        self._status_line_sent = True
         await self._writer.drain()
 
     async def _send_headers(self):
@@ -308,16 +330,14 @@ class response:
         if self.headers is None:
             raise Exception("Headers already sent")
 
-        _headers = self.headers
-        self.headers = None
-
         hdrs = ""
         # Headers
-        for k, v in _headers.items():
-            hdrs += "{}: {}\r\n".format(k, v)
+        for k, v in self.headers.items():
+            hdrs += "%s: %s\r\n" % (k, v)
         hdrs += "\r\n"
 
         self._writer.write(hdrs)
+        self._headers_sent = True
         await self._writer.drain()
         # Collect garbage after small mallocs
         gc.collect()
@@ -333,7 +353,7 @@ class response:
             # Not enough permissions. Send HTTP 403 - Forbidden
             await resp.error(403)
         """
-        if self._status_code is None or self.headers is None:
+        if self._status_line_sent or self._headers_sent:
             raise Exception("Status line already sent, cannot set status code")
 
         self._status_code = code
@@ -378,7 +398,7 @@ class response:
         Example:
             resp.add_header('Content-Encoding', 'gzip')
         """
-        if self.headers is None:
+        if self._headers_sent:
             raise Exception("Headers already sent")
 
         self.headers[key] = value
