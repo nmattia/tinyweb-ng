@@ -3,7 +3,7 @@
 import gc
 import json
 import sys
-from tinyweb.server import webserver
+import tinyweb
 import logging
 import network
 
@@ -18,7 +18,7 @@ def init_logger(name="root"):
 init_logger("root")
 init_logger("WEB")
 
-server = webserver()
+server = tinyweb.HTTPServer()
 
 
 @server.route("/", methods=["GET"])

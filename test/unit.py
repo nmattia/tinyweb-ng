@@ -10,14 +10,14 @@ import unittest
 import uos as os
 import uerrno as errno
 import uasyncio as asyncio
-from tinyweb.server import webserver
+from tinyweb.server import HTTPServer
 from tinyweb.server import (
     urldecode_plus,
     parse_request_line,
     parse_query_string,
     match_url_paths,
 )
-from tinyweb.server import request, HTTPException
+from tinyweb.server import Request, HTTPException
 
 
 # Helper to delete file
@@ -182,7 +182,7 @@ class Utils(unittest.TestCase):
 
 class ServerParts(unittest.TestCase):
     def testRequestLineEmptyLinesBefore(self):
-        req = request(mockReader(["\n", "\r\n", "GET /?a=a HTTP/1.1"]))
+        req = Request(mockReader(["\n", "\r\n", "GET /?a=a HTTP/1.1"]))
         asyncio.run(req.read_request_line())
         self.assertEqual(b"GET", req.method)
         self.assertEqual(b"/", req.path)
@@ -193,26 +193,26 @@ class ServerParts(unittest.TestCase):
 
         for r in runs:
             with self.assertRaises(HTTPException):
-                req = request(mockReader(r))
+                req = Request(mockReader(r))
                 asyncio.run(req.read_request_line())
 
     def testHeadersSimple(self):
-        req = request(mockReader([HDR("Host: google.com"), HDRE]))
+        req = Request(mockReader([HDR("Host: google.com"), HDRE]))
         asyncio.run(req.read_headers([b"Host"]))
         self.assertEqual(req.headers, {b"Host": b"google.com"})
 
     def testHeadersSpaces(self):
-        req = request(mockReader([HDR("Host:    \t    google.com   \t     "), HDRE]))
+        req = Request(mockReader([HDR("Host:    \t    google.com   \t     "), HDRE]))
         asyncio.run(req.read_headers([b"Host"]))
         self.assertEqual(req.headers, {b"Host": b"google.com"})
 
     def testHeadersEmptyValue(self):
-        req = request(mockReader([HDR("Host:"), HDRE]))
+        req = Request(mockReader([HDR("Host:"), HDRE]))
         asyncio.run(req.read_headers([b"Host"]))
         self.assertEqual(req.headers, {b"Host": b""})
 
     def testHeadersMultiple(self):
-        req = request(
+        req = Request(
             mockReader(
                 [
                     HDR("Host: google.com"),
@@ -234,13 +234,13 @@ class ServerParts(unittest.TestCase):
         urls = [("/", 1), ("/%20", 2), ("/a/b", 3), ("/aac", 5)]
         junk = ["//", "", "/a", "/aa", "/a/fhhfhfhfhfhf"]
         # Create server, add routes
-        srv = webserver()
+        srv = HTTPServer()
         for u in urls:
             srv.add_route(u[0], u[1])
         # Search them all
         for u in urls:
             # Create mock request object with "pre-parsed" url path
-            rq = request(mockReader([]))
+            rq = Request(mockReader([]))
             rq.path = u[0].encode()
             rq.method = b"GET"
             result = srv._find_url_handler(rq)
@@ -251,13 +251,13 @@ class ServerParts(unittest.TestCase):
             self.assertEqual(u[1], f)
         # Some simple negative cases
         for j in junk:
-            rq = request(mockReader([]))
+            rq = Request(mockReader([]))
             rq.path = j.encode()
             with self.assertRaises(HTTPException):
                 srv._find_url_handler(rq)
 
     def testUrlFinderNegative(self):
-        srv = webserver()
+        srv = HTTPServer()
         # empty URL is not allowed
         with self.assertRaises(ValueError):
             srv.add_route("", 1)
@@ -283,7 +283,7 @@ class TestHTTPServer(unittest.TestCase):
     PORT = 8081
 
     def setUp(self):
-        self.server = webserver()
+        self.server = HTTPServer()
 
     def assertRequestResponse(self, req, expected):
         host = TestHTTPServer.HOST
@@ -357,7 +357,7 @@ class TestHTTPServer(unittest.TestCase):
 
 
 # We want to test decorators as well
-server_for_decorators = webserver()
+server_for_decorators = HTTPServer()
 
 
 @server_for_decorators.route("/uid/<user_id>")
@@ -367,7 +367,7 @@ async def route_for_decorator(req, resp, user_id):
     await resp.send("YO, {}".format(user_id))
 
 
-class ServerFull(unittest.TestCase):
+class HTTPServerFull(unittest.TestCase):
     def assertHistory(self, wrt, expected):
         if isinstance(expected, list):
             self.assertEqual(wrt.history, expected)
@@ -385,7 +385,7 @@ class ServerFull(unittest.TestCase):
         )  # fmt: skip
 
         # Create one more server - to simplify bunch of tests
-        self.srv = webserver()
+        self.srv = HTTPServer()
 
     def testRouteDecorator1(self):
         """Test @.route() decorator"""
@@ -423,7 +423,7 @@ class ServerFull(unittest.TestCase):
     def testOverlappingPaths(self):
         """Tests that the same path may be registered multiple times."""
 
-        server = webserver()
+        server = HTTPServer()
 
         @server.route("/", methods=["GET"])
         async def get(req, resp):
@@ -457,7 +457,7 @@ class ServerFull(unittest.TestCase):
 
     def testCatchAllDecorator(self):
         # A fresh server for the catchall handler
-        server_for_catchall_decorator = webserver()
+        server_for_catchall_decorator = HTTPServer()
 
         # Catchall decorator and handler
         @server_for_catchall_decorator.catchall()
@@ -615,7 +615,7 @@ class ServerFull(unittest.TestCase):
         self.assertTrue(wrt.closed)
 
     def testGet(self):
-        srv = webserver()
+        srv = HTTPServer()
 
         async def hello(req, resp):
             resp.add_header("Content-Type", "text/plain")
@@ -634,7 +634,7 @@ class ServerFull(unittest.TestCase):
         self.assertHistory(wrt, expected)
 
     def testGetWithParam(self):
-        srv = webserver()
+        srv = HTTPServer()
 
         async def echo(req, resp, param):
             resp.add_header("Content-Type", "text/plain")
@@ -655,7 +655,7 @@ class ServerFull(unittest.TestCase):
     def testInvalidMethod(self):
         rdr = mockReader(["PUT / HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
-        srv = webserver()
+        srv = HTTPServer()
 
         async def get(req, resp):
             resp.add_header("Content-Type", "text/plain")
@@ -671,7 +671,7 @@ class ServerFull(unittest.TestCase):
     def testException(self):
         rdr = mockReader(["GET /err HTTP/1.0\r\n", HDRE])
         wrt = mockWriter()
-        srv = webserver()
+        srv = HTTPServer()
 
         async def err(req, resp):
             raise Exception("This is an error")
@@ -687,7 +687,7 @@ class ServerFull(unittest.TestCase):
 
 class StaticContent(unittest.TestCase):
     def setUp(self):
-        self.srv = webserver()
+        self.srv = HTTPServer()
         self.tempfn = "__tmp.html"
         self.ctype = None
         self.etype = None
