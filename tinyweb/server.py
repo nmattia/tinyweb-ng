@@ -1,7 +1,7 @@
 """
-Tiny Web - pretty simple and powerful web server for tiny platforms like ESP8266 / ESP32
-MIT license
-(C) Konstantin Belyalov 2017-2018
+Minimal HTTP/1.0 server for MicroPython.
+
+Copyright Nicolas Mattia 2025
 """
 
 import logging
@@ -41,24 +41,19 @@ type PathParameters = list[(bytes, bytes)]  # list of param name and param value
 
 log = logging.getLogger("WEB")
 
-# with v1.21.0 release all u-modules where renamend without the u prefix
-# -> uasyncio no named asyncio
-# asyncio v3 is shipped with MicroPython 1.13, and contains some subtle
-# but breaking changes. See also https://github.com/peterhinch/micropython-async/blob/master/v3/README.md
-IS_ASYNCIO_V3 = (
-    hasattr(asyncio, "__version__")
-    and asyncio.__version__ >= (3,)
-    and asyncio.__version__ < (4,)
-)
-
-if not IS_ASYNCIO_V3:
-    log.warning("tinyweb expects asyncio v3")
-
 
 def urldecode_plus(s):
-    """Decode urlencoded string (including '+' char).
+    """
+    Decode a URL-encoded string, interpreting '+' as space and '%xx' sequences as characters.
 
-    Returns decoded string
+    Parameters:
+        s: The URL-encoded input string.
+
+    Returns:
+        A decoded string.
+
+    Raises:
+        ValueError: If percent-encoded bytes are malformed.
     """
     s = s.replace("+", " ")
     arr = s.split("%")
@@ -74,9 +69,14 @@ def urldecode_plus(s):
 
 
 def parse_query_string(s):
-    """Parse urlencoded string into dict.
+    """
+    Parse a URL query string into a dictionary of key-value pairs.
 
-    Returns dict
+    Parameters:
+        s: The query string to parse (e.g., 'key1=val1&key2=val2').
+
+    Returns:
+        A dictionary mapping keys to values.
     """
     res = {}
     pairs = s.split("&")
@@ -91,9 +91,14 @@ def parse_query_string(s):
 
 def match_url_paths(route_path: bytes, req_path: bytes) -> None | PathParameters:
     """
-    Match the 'route_path' to the 'req_path' and returns any path parameters.
+    Match a request path against a route path and extract any path parameters.
 
-    Returns None if there is no match.
+    Parameters:
+        route_path: The route pattern (e.g., b'/user/<id>').
+        req_path: The requested URL path (e.g., b'/user/42').
+
+    Returns:
+        A list of (parameter name, parameter value) pairs if matched; otherwise None.
     """
     path_params = []
 
@@ -141,6 +146,8 @@ SUPPORTED_METHODS = [
 
 def parse_request_line(line: bytes) -> RequestLine | None:
     """
+    Parse an HTTP request line according to RFC 9112.
+
     As per https://www.rfc-editor.org/rfc/rfc9112.html#name-request-line
         request-line   = method SP request-target SP HTTP-version
     where SP is "single space"
@@ -148,6 +155,12 @@ def parse_request_line(line: bytes) -> RequestLine | None:
     where request-target is arbitrary for our purposes
     where HTTP-version is 'HTTP-version  = HTTP-name "/" DIGIT "." DIGIT'
         (https://www.rfc-editor.org/rfc/rfc9112.html#name-http-version)
+
+    Parameters:
+        line: The raw request line as bytes (e.g., b'GET / HTTP/1.1').
+
+    Returns:
+        A dictionary with 'method', 'target', and 'version', or None if invalid.
     """
     fragments = line.split(b" ")
     if len(fragments) != 3:
@@ -201,9 +214,14 @@ class Request:
 
     async def read_request_line(self):
         """
-        Read and parse first line (AKA HTTP Request Line).
+        Read and parse the HTTP request line from the client.
 
-        This updates the 'self' with the data. May raise a 400.
+        Updates self.method, self.path, and self.query_string.
+
+        Raises:
+            HTTPException(400): If the request line is malformed.
+
+        This is a coroutine.
         """
         while True:
             rl_raw = await self.reader.readline()
@@ -225,6 +243,17 @@ class Request:
             self.query_string = url_frags[1]
 
     async def read_headers(self, save_headers=[]):
+        """
+        Read HTTP headers from the stream and store selected ones.
+
+        Parameters:
+            save_headers: List of header names (bytes or strings) to preserve in self.headers.
+
+        Raises:
+            HTTPException(400): If a header line is malformed.
+
+        This is a coroutine.
+        """
         self.headers = {}
         while True:
             gc.collect()
@@ -262,6 +291,14 @@ class Response:
         self._headers_sent: bool = False
 
     async def _ensure_ready_for_body(self):
+        """
+        Ensure the status line and headers are sent before sending a response body.
+
+        Raises:
+            Exception: If headers are sent before the status line.
+
+        This is a coroutine.
+        """
         status_line_sent = self._status_line_sent
         headers_sent = self._headers_sent
 
@@ -274,6 +311,15 @@ class Response:
             await self._send_headers()
 
     def set_status_code(self, value: int):
+        """
+        Set the HTTP status code to send.
+
+        Parameters:
+            value: Integer status code (e.g., 200, 404).
+
+        Raises:
+            Exception: If the status line has already been sent.
+        """
         if self._status_line_sent:
             raise Exception("status line already sent")
 
@@ -281,7 +327,13 @@ class Response:
 
     def set_reason_phrase(self, value: str):
         """
-        Set the optional 'reason-phrase' (like 'OK' for 200 or 'NOT FOUND' for 404)
+        Set the optional reason phrase for the HTTP status line.
+
+        Parameters:
+            value: A string like 'OK' or 'NOT FOUND'.
+
+        Raises:
+            Exception: If the status line has already been sent.
         """
         if self._status_line_sent:
             raise Exception("status line already sent")
@@ -289,6 +341,14 @@ class Response:
         self._reason_phrase = value
 
     async def _send_status_line(self):
+        """
+        Send the HTTP status line to the client.
+
+        Raises:
+            Exception: If the status line has already been sent.
+
+        This is a coroutine.
+        """
         if self._status_line_sent:
             raise Exception("status line already sent")
 
@@ -306,7 +366,12 @@ class Response:
 
     async def _send_headers(self):
         """
-        Send headers followed by an empty line.
+        Send all HTTP headers followed by a blank line.
+
+        Raises:
+            Exception: If headers have already been sent.
+
+        This is a coroutine.
         """
 
         if self.headers is None:
@@ -325,20 +390,35 @@ class Response:
         gc.collect()
 
     async def send(self, content, **kwargs):
+        """
+        Send the response body content to the client.
+
+        May be called as many times as needed, the content will be appended to the
+        body.
+
+        Parameters:
+            content: The data to send as response body.
+
+        Raises:
+            Exception: If headers or status line are not ready.
+
+        This is a coroutine.
+        """
         await self._ensure_ready_for_body()
 
         self._writer.write(content)
         await self._writer.drain()
 
     def add_header(self, key, value):
-        """Add HTTP response header
+        """
+        Add a header to the response.
 
-        Arguments:
-            key - header name
-            value - header value
+        Parameters:
+            key: The header name.
+            value: The header value.
 
-        Example:
-            resp.add_header('Content-Encoding', 'gzip')
+        Raises:
+            Exception: If headers have already been sent.
         """
         if self._headers_sent:
             raise Exception("Headers already sent")
@@ -348,16 +428,7 @@ class Response:
 
 class HTTPServer:
     def __init__(self, request_timeout=3, backlog=16, debug=False):
-        """Tiny Web Server class.
-        Keyword arguments:
-            request_timeout - Time for client to send complete request
-                              after that connection will be closed.
-            backlog         - Parameter to asyncio.start_server() function.
-                              Defines size of pending to be accepted connections
-                              queue.
-            debug           - Whether send exception info (text + backtrace)
-                              to client together with HTTP 500 or not.
-        """
+        """HTTPServer class."""
         self.loop = asyncio.get_event_loop()
         self.request_timeout = request_timeout
         self.backlog = backlog
@@ -366,10 +437,19 @@ class HTTPServer:
         self.catch_all_handler = None
 
     def _find_url_handler(self, req) -> tuple[Handler, Params, PathParameters]:
-        """Helper to find URL handler.
-        Returns tuple of (function, params) or HTTPException (404 or 405) if not found.
+        """
+        Find the registered handler matching the given request method and path.
 
-        raises: HTTPException
+        Parameters:
+            req: A Request instance.
+
+        Returns:
+            A tuple of (handler, params, path_parameters).
+
+        Raises:
+            HTTPException(404): If no matching path.
+            HTTPException(405): If path matches but method does not.
+            HTTPException(501): For unsupported methods (CONNECT, OPTIONS, TRACE).
         """
 
         # we only support basic (GET, PUT, etc) requests
@@ -402,8 +482,14 @@ class HTTPServer:
         raise HTTPException(404)
 
     async def _handle_connection(self, reader, writer):
-        """Handler for TCP connection with
-        HTTP/1.0 protocol implementation
+        """
+        Handle a client TCP connection, parse request (HTTP/1.0), call handler, return response.
+
+        Parameters:
+            reader: StreamReader for reading the connection.
+            writer: StreamWriter for writing the connection.
+
+        This is a coroutine.
         """
         gc.collect()
 
@@ -467,15 +553,14 @@ class HTTPServer:
         methods: list[str] = ["GET"],
         save_headers: list[str | bytes] = [],
     ):
-        """Add URL to function mapping.
+        """
+        Register a route handler for a URL pattern and list of HTTP methods.
 
-        Arguments:
-            url - url to map function with
-            f - function to map
-
-        Keyword arguments:
-            methods - list of allowed methods. Defaults to ['GET', 'POST']
-            save_headers - contains list of HTTP headers to be saved. Case sensitive. Default - empty.
+        Parameters:
+            url: The route path pattern (e.g., '/hello/<name>').
+            f: The handler function (async).
+            methods: List of allowed HTTP methods.
+            save_headers: Headers to preserve from the request.
         """
         if url == "" or "?" in url:
             raise ValueError("Invalid URL")
@@ -490,14 +575,11 @@ class HTTPServer:
             self.routes.append((method, url.encode(), f, params))
 
     def catchall(self):
-        """Decorator for catchall()
+        """
+        Decorator to register a catch-all handler when no routes match.
 
-        Example:
-            @app.catchall()
-            def catchall_handler(req, resp):
-                response._status_code = 404
-                await response.start_html()
-                await response.send('<html><body><h1>My custom 404!</h1></html>\n')
+        Returns:
+            A decorator function.
         """
         params: Params = {
             "save_headers": [],
@@ -510,13 +592,15 @@ class HTTPServer:
         return _route
 
     def route(self, url, **kwargs):
-        """Decorator for add_route()
+        """
+        Decorator to register a route handler.
 
-        Example:
-            @app.route('/')
-            def index(req, resp):
-                await resp.start_html()
-                await resp.send('<html><body><h1>Hello, world!</h1></html>\n')
+        Parameters:
+            url: The route path pattern.
+            kwargs: Arguments passed to add_route(), e.g., methods or save_headers.
+
+        Returns:
+            A decorator function.
         """
 
         def _route(f):
@@ -526,12 +610,38 @@ class HTTPServer:
         return _route
 
     def run(self, host="127.0.0.1", port=8081):
+        """
+        Start the HTTP server (blocking) on the specified host and port and run forever.
+
+        Parameters:
+            host: Interface to bind to (default "127.0.0.1").
+            port: Port number to listen on (default 8081).
+        """
         asyncio.run(self.arun(host, port))
 
     async def arun(self, host="127.0.0.1", port=8081):
+        """
+        Asynchronously start the server and wait for it to close.
+
+        Parameters:
+            host: Interface to bind to.
+            port: Port number.
+
+        This is a coroutine.
+        """
         await self.start(host, port).wait_closed()
 
     def start(self, host, port) -> asyncio.Server:
+        """
+        Start the server and return the asyncio.Server instance.
+
+        Parameters:
+            host: Interface to bind to.
+            port: Port number.
+
+        Returns:
+            An asyncio.Server instance.
+        """
         server = asyncio.run(
             asyncio.start_server(
                 self._handle_connection, host, port, backlog=self.backlog
