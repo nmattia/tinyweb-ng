@@ -7,6 +7,7 @@ MIT license
 """
 
 import os
+import gc
 import unittest
 import asyncio
 from tinyweb.server import (
@@ -266,7 +267,7 @@ class ServerParts(unittest.TestCase):
             srv.add_route("/?a=a", 1)
 
 
-async def send_raw_request(host, port, request, expect_close=True, timeout=2):
+async def send_raw_request(host, port, request):
     """Sends a raw HTTP request and returns the raw response."""
     (reader, writer) = await asyncio.open_connection(host, port)
     writer.write(request.encode("ascii"))
@@ -284,6 +285,7 @@ class TestHTTPServer(unittest.TestCase):
 
     def setUp(self):
         self.server = HTTPServer()
+        gc.collect()
 
     def assertRequestResponse(self, req, expected):
         host = TestHTTPServer.HOST
