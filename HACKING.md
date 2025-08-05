@@ -1,4 +1,4 @@
-# Hacking on tinyweb
+# Hacking on uht
 
 Run the linters
 
@@ -16,9 +16,9 @@ make build
 make test
 ```
 
-## Install tinyweb on a board
+## Install uht on a board
 
-First MicroPython (or CircuitPython) needs to be installed on your board. Then the dependencies need to be installed. Then you can install tinyweb.
+First MicroPython (or CircuitPython) needs to be installed on your board. Then the dependencies need to be installed. Then you can install `uht`.
 
 ### Installing MicroPython
 
@@ -63,14 +63,14 @@ Install the `logging` library with the following command:
 mpremote mip install logging
 ```
 
-### Install tinyweb
+### Install uht
 
-Build the tinyweb server library with the following commands:
+Build the `uht` library with the following commands:
 
 ```bash
 mpremote mkdir :/lib || true
-make ./dist/tinyweb.py
-mpremote cp ./dist/tinyweb.py :/lib/tinyweb.py
+make ./dist/uht.py
+mpremote cp ./dist/uht.py :/lib/uht.py
 ```
 
 Run the example webapp:

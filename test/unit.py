@@ -1,6 +1,6 @@
 #!/usr/bin/env micropython
 """
-Unittests for tinyweb
+Unittests for uht
 MIT license
 (C) Nicolas Mattia 2025 —
 (C) Konstantin Belyalov 2017-2018
@@ -10,7 +10,7 @@ import os
 import gc
 import unittest
 import asyncio
-from tinyweb import (
+from uht import (
     HTTPServer,
     HTTPException,
     Request,
