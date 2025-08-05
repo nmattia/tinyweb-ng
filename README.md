@@ -21,6 +21,15 @@ A minimal HTTP/1.0 server for tiny devices (ESP32, Raspberry Pi Pico, etc.) runn
 
 ## Basic Usage
 
+Install with `mip`:
+
+```bash
+mpremote mip install logging
+mpremote mip install "https://github.com/nmattia/uht/releases/latest/download/uht.py" # .mpy is also available
+```
+
+Start a server:
+
 ```python
 from uht import HTTPServer
 
@@ -33,30 +42,19 @@ async def index(req, resp):
 app.run()  # Starts the server on 127.0.0.1:8081
 ```
 
-Refer to the [documentation](https://nmattia.github.io/uht/) for all options.
-
-## Supported Features
-
-* HTTP/1.0 support
-* Route handling with method-based dispatch
-* Path parameters (`/user/<id>`)
-* Custom response headers
-* Custom status codes and phrases
-* Catch-all handler
-
-### Limitations
-
-* Only supports HTTP/1.0
-* No SSL/TLS
-* No built-in static file serving
+See the [Getting Started](#getting-started) and [Examples](#examples) sections below for more information and refer to the [documentation](https://nmattia.github.io/uht/) for all options.
 
 ## Getting Started
 
-This will guide you through the installation of the `uht` library and its dependencies via MicroPython and [`mip`](https://docs.micropython.org/en/latest/reference/packages.html#installing-packages-with-mip).
+This will guide you through the installation of the `uht` library and its dependencies via MicroPython and [`mip`](https://docs.micropython.org/en/latest/reference/packages.html#installing-packages-with-mip) and show you how to start an HTTP server.
+
+> [!NOTE]
+>
+> See the [Basic Usage](#basic-usage) section for a shorter — but equivalent — intro.
 
 ### Installing mpremote
 
-The simplest way to get a MicroPython console to your microcontroller is to use mpremote. First install `mpremote`:
+The simplest way to get a MicroPython repl on your microcontroller is to use mpremote. First install `mpremote`:
 
 ```bash
 pip install --user mpremote
@@ -70,16 +68,16 @@ mpremote # will automatically connect to any board that's plugged in and start a
 
 ### Connecting to WiFi
 
-If you are not seeing the MicroPython repl prompt (`>>>`) you may need to hit `Ctrl-C`.
-
 In the MicroPython repl, set the SSID and password for your WiFi network:
 
-```python
+```
 >>> SSID = "my-ssid" # use value from your network
 >>> PASSWORD = "my-password" # use value from your network
 ```
 
-(prompt `>>>` omitted from snippets)
+> [!NOTE]
+>
+> If you are not seeing the MicroPython repl prompt (`>>>`) you may need to hit `Ctrl-C`. The `>>>` prompt is omitted from snippets below.
 
 Then activate the WiFi interface (the repl prompt `>>>` is omitted for snippets):
 
