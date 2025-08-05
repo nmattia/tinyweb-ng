@@ -1,7 +1,26 @@
 """
-Minimal HTTP/1.0 server for MicroPython.
+Minimal HTTP server for MicroPython and CircuitPython.
 
-Copyright Nicolas Mattia 2025
+Supports HTTP/1.0 request parsing, routing based on method and path, and response generation using asyncio streams.
+
+Example:
+```python
+import uht
+
+server = uht.HTTPServer()
+
+@server.route("/hello/<name>")
+async def greet(req, resp, name):
+    await resp.send("Hello, " + name)
+
+server.run("0.0.0.0", 8080)
+```
+
+See the main :class:`HTTPServer` class for details.
+
+Project README, examples and more: https://github.com/nmattia/uht
+
+Copyright 2025 `Nicolas Mattia <https://github.com/nmattia>`_
 """
 
 import logging
@@ -39,57 +58,10 @@ type Route = tuple[bytes, bytes, Handler, Params]
 type PathParameters = list[(bytes, bytes)]  # list of param name and param value
 # TYPING_END
 
-log = logging.getLogger("WEB")
+_log = logging.getLogger("WEB")
 
 
-def urldecode_plus(s):
-    """
-    Decode a URL-encoded string, interpreting '+' as space and '%xx' sequences as characters.
-
-    Parameters:
-        s: The URL-encoded input string.
-
-    Returns:
-        A decoded string.
-
-    Raises:
-        ValueError: If percent-encoded bytes are malformed.
-    """
-    s = s.replace("+", " ")
-    arr = s.split("%")
-    res = arr[0]
-    for it in arr[1:]:
-        if len(it) >= 2:
-            res += chr(int(it[:2], 16)) + it[2:]
-        elif len(it) == 0:
-            res += "%"
-        else:
-            res += it
-    return res
-
-
-def parse_query_string(s):
-    """
-    Parse a URL query string into a dictionary of key-value pairs.
-
-    Parameters:
-        s: The query string to parse (e.g., 'key1=val1&key2=val2').
-
-    Returns:
-        A dictionary mapping keys to values.
-    """
-    res = {}
-    pairs = s.split("&")
-    for p in pairs:
-        vals = [urldecode_plus(x) for x in p.split("=", 1)]
-        if len(vals) == 1:
-            res[vals[0]] = ""
-        else:
-            res[vals[0]] = vals[1]
-    return res
-
-
-def match_url_paths(route_path: bytes, req_path: bytes) -> None | PathParameters:
+def _match_url_paths(route_path: bytes, req_path: bytes) -> None | PathParameters:
     """
     Match a request path against a route path and extract any path parameters.
 
@@ -132,7 +104,7 @@ class HTTPException(Exception):
 
 
 # per https://www.rfc-editor.org/rfc/rfc9110#table-4
-SUPPORTED_METHODS = [
+_SUPPORTED_METHODS = [
     b"GET",
     b"HEAD",
     b"POST",
@@ -144,7 +116,7 @@ SUPPORTED_METHODS = [
 ]
 
 
-def parse_request_line(line: bytes) -> RequestLine | None:
+def _parse_request_line(line: bytes) -> RequestLine | None:
     """
     Parse an HTTP request line according to RFC 9112.
 
@@ -166,7 +138,7 @@ def parse_request_line(line: bytes) -> RequestLine | None:
     if len(fragments) != 3:
         return None
 
-    if fragments[0] not in SUPPORTED_METHODS:
+    if fragments[0] not in _SUPPORTED_METHODS:
         return None
 
     if not fragments[1]:
@@ -198,11 +170,15 @@ def parse_request_line(line: bytes) -> RequestLine | None:
 
 
 class Request:
-    """HTTP Request class"""
+    """HTTP Request class
+
+    :class:`HTTPServer`
+
+    """
 
     def __init__(self, _reader):
         self.reader: asyncio.StreamReader = _reader
-        # headers are 'None' until `read_headers` is called
+        # headers are 'None' until `_read_headers` is called
         self.headers: None | dict[bytes, bytes] = None
         self.method: bytes = b""
         self.path: bytes = b""
@@ -212,7 +188,7 @@ class Request:
             "save_headers": [],
         }
 
-    async def read_request_line(self):
+    async def _read_request_line(self):
         """
         Read and parse the HTTP request line from the client.
 
@@ -230,7 +206,7 @@ class Request:
                 continue
             break
 
-        rl = parse_request_line(rl_raw)
+        rl = _parse_request_line(rl_raw)
         if not rl:
             raise HTTPException(400)
 
@@ -242,7 +218,7 @@ class Request:
         if len(url_frags) > 1:
             self.query_string = url_frags[1]
 
-    async def read_headers(self, save_headers=[]):
+    async def _read_headers(self, save_headers=[]):
         """
         Read HTTP headers from the stream and store selected ones.
 
@@ -427,14 +403,27 @@ class Response:
 
 
 class HTTPServer:
-    def __init__(self, request_timeout=3, backlog=16, debug=False):
-        """HTTPServer class."""
-        self.loop = asyncio.get_event_loop()
-        self.request_timeout = request_timeout
-        self.backlog = backlog
-        self.debug = debug
-        self.routes: list[Route] = []
-        self.catch_all_handler = None
+    def __init__(self, backlog=16):
+        """
+        HTTPServer class.
+
+        See the :func:`route` decorator for specifying routes.
+        See :func:`run` for starting the server.
+
+        """
+        self._backlog = backlog
+        self._routes: list[Route] = []
+        self._catch_all_handler = None
+
+    def run(self, host="127.0.0.1", port=8081):
+        """
+        Start the HTTP server (blocking) on the specified host and port and run forever.
+
+        Parameters:
+            host: Interface to bind to (default "127.0.0.1").
+            port: Port number to listen on (default 8081).
+        """
+        asyncio.run(self.arun(host, port))
 
     def _find_url_handler(self, req) -> tuple[Handler, Params, PathParameters]:
         """
@@ -464,16 +453,16 @@ class HTTPServer:
         # between 404 and 405
         path_matched = False
 
-        for method, path, handler, params in self.routes:
-            result = match_url_paths(path, req.path)
+        for method, path, handler, params in self._routes:
+            result = _match_url_paths(path, req.path)
             if result is not None:
                 if method == req.method:
                     return (handler, params, result)
 
                 path_matched = True
 
-        if self.catch_all_handler:
-            return self.catch_all_handler
+        if self._catch_all_handler:
+            return self._catch_all_handler
 
         if path_matched:
             raise HTTPException(405)
@@ -496,11 +485,11 @@ class HTTPServer:
         try:
             req = Request(reader)
             resp = Response(writer)
-            await req.read_request_line()
+            await req._read_request_line()
 
             # Find URL handler and parse headers
             (handler, req_params, path_params) = self._find_url_handler(req)
-            await req.read_headers(req_params.get("save_headers") or [])
+            await req._read_headers(req_params.get("save_headers") or [])
 
             gc.collect()  # free up some memory before the handler runs
 
@@ -517,7 +506,7 @@ class HTTPServer:
             # Do not send response for connection related errors - too late :)
             # P.S. code 32 - is possible BROKEN PIPE error (TODO: is it true?)
             if e.args[0] not in (errno.ECONNABORTED, errno.ECONNRESET, 32):
-                log.exception(f"Connection error: {e}")
+                _log.exception(f"Connection error: {e}")
                 try:
                     resp.set_status_code(500)
                     await resp._ensure_ready_for_body()
@@ -526,17 +515,17 @@ class HTTPServer:
         except HTTPException as e:
             try:
                 if req.headers is None:
-                    await req.read_headers()
+                    await req._read_headers()
                 resp.set_status_code(e.code)
                 await resp._ensure_ready_for_body()
             except Exception as e:
-                log.exception(
+                _log.exception(
                     f"Failed to send error after HTTPException. Original error: {e}"
                 )
         except Exception as e:
             # Unhandled expection in user's method
-            log.error(req.path.decode())
-            log.exception(f"Unhandled exception in user's method. Original error: {e}")
+            _log.error(req.path.decode())
+            _log.exception(f"Unhandled exception in user's method. Original error: {e}")
             try:
                 resp.set_status_code(500)
                 await resp._ensure_ready_for_body()
@@ -572,7 +561,7 @@ class HTTPServer:
         }
 
         for method in [x.encode().upper() for x in methods]:
-            self.routes.append((method, url.encode(), f, params))
+            self._routes.append((method, url.encode(), f, params))
 
     def catchall(self):
         """
@@ -586,7 +575,7 @@ class HTTPServer:
         }
 
         def _route(f):
-            self.catch_all_handler = (f, params, {})
+            self._catch_all_handler = (f, params, {})
             return f
 
         return _route
@@ -608,16 +597,6 @@ class HTTPServer:
             return f
 
         return _route
-
-    def run(self, host="127.0.0.1", port=8081):
-        """
-        Start the HTTP server (blocking) on the specified host and port and run forever.
-
-        Parameters:
-            host: Interface to bind to (default "127.0.0.1").
-            port: Port number to listen on (default 8081).
-        """
-        asyncio.run(self.arun(host, port))
 
     async def arun(self, host="127.0.0.1", port=8081):
         """
@@ -645,5 +624,5 @@ class HTTPServer:
             An asyncio.Server instance.
         """
         return asyncio.start_server(
-            self._handle_connection, host, port, backlog=self.backlog
+            self._handle_connection, host, port, backlog=self._backlog
         )
