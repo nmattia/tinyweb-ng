@@ -10,7 +10,7 @@ import os
 import gc
 import unittest
 import asyncio
-from tinyweb.server import (
+from tinyweb import (
     HTTPServer,
     HTTPException,
     Request,

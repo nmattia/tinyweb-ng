@@ -20,7 +20,7 @@ def init_logger(name="root"):
 init_logger("root")
 init_logger("WEB")
 
-server = tinyweb.server.HTTPServer()
+server = tinyweb.HTTPServer()
 
 
 async def html_file_handler(filename, resp):
@@ -41,7 +41,7 @@ async def html_file_handler(filename, resp):
     except OSError as e:
         # special handling for ENOENT / EACCESS
         if e.args[0] in (errno.ENOENT, errno.EACCES):
-            raise tinyweb.server.HTTPException(404)
+            raise tinyweb.HTTPException(404)
         else:
             raise
 
