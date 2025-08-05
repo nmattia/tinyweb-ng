@@ -7,8 +7,7 @@ MIT license
 import logging
 import asyncio
 import gc
-import uos as os
-import uerrno as errno
+import errno
 
 # TYPING_START
 # typing related lines that get stripped during build
@@ -356,66 +355,6 @@ class Response:
             raise Exception("Headers already sent")
 
         self.headers[key] = value
-
-    async def send_file(
-        self,
-        filename,
-        content_type=None,
-        content_encoding=None,
-        max_age=2592000,
-        buf_size=128,
-    ):
-        """Send local file as HTTP response.
-        This function is generator.
-
-        Arguments:
-            filename - Name of file which exists in local filesystem
-        Keyword arguments:
-            content_type - Filetype. By default - None means auto-detect.
-            max_age - Cache control. How long browser can keep this file on disk.
-                      By default - 30 days
-                      Set to 0 - to disable caching.
-
-        Example 1: Default use case:
-            await resp.send_file('images/cat.jpg')
-
-        Example 2: Disable caching:
-            await resp.send_file('static/index.html', max_age=0)
-
-        Example 3: Override content type:
-            await resp.send_file('static/file.bin', content_type='application/octet-stream')
-        """
-        try:
-            # Get file size
-            stat = os.stat(filename)
-            file_len = stat[6]
-            self.add_header("Content-Length", str(file_len))
-            # Find content type
-            if content_type:
-                self.add_header("content-type", content_type)
-            # Add content-encoding, if any
-            if content_encoding:
-                self.add_header("Content-Encoding", content_encoding)
-            # Since this is static content is totally make sense
-            # to tell browser to cache it, however, you can always
-            # override it by setting max_age to zero
-            self.add_header("Cache-Control", "max-age={}, public".format(max_age))
-            with open(filename) as f:
-                await self._send_status_line()
-                await self._send_headers()
-                gc.collect()
-                buf = bytearray(min(file_len, buf_size))
-                while True:
-                    size = f.readinto(buf)
-                    if size == 0:
-                        break
-                    await self.send(buf[:size])
-        except OSError as e:
-            # special handling for ENOENT / EACCESS
-            if e.args[0] in (errno.ENOENT, errno.EACCES):
-                raise HTTPException(404)
-            else:
-                raise
 
 
 class HTTPServer:

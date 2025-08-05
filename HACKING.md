@@ -77,6 +77,7 @@ Build the tinyweb server library with the following commands:
 mpremote mkdir :/lib || true
 mpremote mkdir :/lib/tinyweb || true
 make ./dist/tinyweb/server.py
+mpremote cp ./tinyweb/__init__.py :/lib/tinyweb/__init__.py
 mpremote cp ./dist/tinyweb/server.py :/lib/tinyweb/server.py
 ```
 

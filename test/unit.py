@@ -6,18 +6,18 @@ MIT license
 (C) Konstantin Belyalov 2017-2018
 """
 
+import os
 import unittest
-import uos as os
-import uerrno as errno
-import uasyncio as asyncio
-from tinyweb.server import HTTPServer
+import asyncio
 from tinyweb.server import (
+    HTTPServer,
+    HTTPException,
+    Request,
     urldecode_plus,
     parse_request_line,
     parse_query_string,
     match_url_paths,
 )
-from tinyweb.server import Request, HTTPException
 
 
 # Helper to delete file
@@ -652,78 +652,6 @@ class HTTPServerFull(unittest.TestCase):
             "\r\n"
         )  # fmt: skip
         self.assertHistory(wrt, expected)
-
-
-class StaticContent(unittest.TestCase):
-    def setUp(self):
-        self.srv = HTTPServer()
-        self.tempfn = "__tmp.html"
-        self.ctype = None
-        self.etype = None
-        self.max_age = 2592000
-        with open(self.tempfn, "wb") as f:
-            f.write("someContent blah blah")
-
-    def tearDown(self):
-        try:
-            delete_file(self.tempfn)
-        except OSError:
-            pass
-
-    async def send_file_handler(self, req, resp):
-        await resp.send_file(
-            self.tempfn,
-            content_type=self.ctype,
-            content_encoding=self.etype,
-            max_age=self.max_age,
-        )
-
-    def testSendFileManual(self):
-        """Verify send_file works great with manually defined parameters"""
-        self.ctype = "text/plain"
-        self.etype = "gzip"
-        self.max_age = 100
-        self.srv.add_route("/", self.send_file_handler)
-        rdr = mockReader(["GET / HTTP/1.0\r\n", HDRE])
-        wrt = mockWriter()
-        asyncio.run(self.srv._handle_connection(rdr, wrt))
-
-        exp = [
-            "HTTP/1.0 200 \r\n",
-            "Cache-Control: max-age=100, public\r\n"
-            "content-type: text/plain\r\n"
-            "Content-Length: 21\r\n"
-            "Content-Encoding: gzip\r\n\r\n",
-            bytearray(b"someContent blah blah"),
-        ]
-        self.assertEqual(wrt.history, exp)
-        self.assertTrue(wrt.closed)
-
-    def testSendFileNotFound(self):
-        """Verify 404 error for non existing files"""
-        self.srv.add_route("/", self.send_file_handler)
-        rdr = mockReader(["GET / HTTP/1.0\r\n", HDRE])
-        wrt = mockWriter()
-
-        # Intentionally delete file before request
-        delete_file(self.tempfn)
-        asyncio.run(self.srv._handle_connection(rdr, wrt))
-
-        exp = ["HTTP/1.0 404 \r\n", "\r\n"]
-        self.assertEqual(wrt.history, exp)
-        self.assertTrue(wrt.closed)
-
-    def testSendFileConnectionReset(self):
-        self.srv.add_route("/", self.send_file_handler)
-        rdr = mockReader(["GET / HTTP/1.0\r\n", HDRE])
-        # tell mockWrite to raise error during send()
-        wrt = mockWriter(generate_exception=OSError(errno.ECONNRESET))
-
-        asyncio.run(self.srv._handle_connection(rdr, wrt))
-
-        # there should be no payload due to connected reset
-        self.assertEqual(wrt.history, [])
-        self.assertTrue(wrt.closed)
 
 
 if __name__ == "__main__":
