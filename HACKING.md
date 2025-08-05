@@ -16,6 +16,13 @@ make build
 make test
 ```
 
+Optionally build the docs:
+
+```
+pip3 install pdoc==15.0.4
+make docs
+```
+
 ## Install uht on a board
 
 First MicroPython (or CircuitPython) needs to be installed on your board. Then the dependencies need to be installed. Then you can install `uht`.

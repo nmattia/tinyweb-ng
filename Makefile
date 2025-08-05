@@ -4,6 +4,7 @@
 
 DOCKER ?= docker
 OUTDIR ?= ./dist
+DOCSDIR := $(OUTDIR)/docs
 SERVER_PY := $(OUTDIR)/uht.py
 SERVER_MPY := $(OUTDIR)/uht.mpy
 
@@ -33,6 +34,10 @@ test: build container
 lint: ./uht.py
 	ruff check
 	mypy
+
+docs: $(SERVER_PY)
+	pdoc $(SERVER_PY) -o $(DOCSDIR)
+
 
 clean:
 	rm -rf $(OUTDIR)

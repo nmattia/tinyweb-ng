@@ -14,10 +14,8 @@ from uht import (
     HTTPServer,
     HTTPException,
     Request,
-    urldecode_plus,
-    parse_request_line,
-    parse_query_string,
-    match_url_paths,
+    _parse_request_line,
+    _match_url_paths,
 )
 
 
@@ -93,36 +91,6 @@ class mockWriter:
 
 
 class Utils(unittest.TestCase):
-    def testUrldecode(self):
-        runs = [
-            ("abc%20def", "abc def"),
-            ("abc%%20def", "abc% def"),
-            ("%%%", "%%%"),
-            ("%20%20", "  "),
-            ("abc", "abc"),
-            ("a%25%25%25c", "a%%%c"),
-            ("a++b", "a  b"),
-            ("+%25+", " % "),
-            ("+%2B+", " + "),
-            ("%20+%2B+%41", "  + A"),
-        ]
-
-        for r in runs:
-            self.assertEqual(urldecode_plus(r[0]), r[1])
-
-    def testParseQueryString(self):
-        runs = [
-            ("k1=v2", {"k1": "v2"}),
-            ("k1=v2&k11=v11", {"k1": "v2", "k11": "v11"}),
-            ("k1=v2&k11=", {"k1": "v2", "k11": ""}),
-            ("k1=+%20", {"k1": "  "}),
-            ("%6b1=+%20", {"k1": "  "}),
-            ("k1=%3d1", {"k1": "=1"}),
-            ("11=22%26&%3d=%3d", {"11": "22&", "=": "="}),
-        ]
-        for r in runs:
-            self.assertEqual(parse_query_string(r[0]), r[1])
-
     def testMatchURLPaths(self):
         runs = [
             (b"/", b"/", []),
@@ -140,42 +108,42 @@ class Utils(unittest.TestCase):
         ]
 
         for route_path, req_path, expected in runs:
-            result = match_url_paths(route_path, req_path)
+            result = _match_url_paths(route_path, req_path)
             self.assertEqual(result, expected)
 
     def test_parse_request_line_empty(self):
-        self.assertIsNone(parse_request_line(b""))
+        self.assertIsNone(_parse_request_line(b""))
 
     def test_parse_request_line_bad_method(self):
-        self.assertIsNone(parse_request_line(b"GOT / HTTP/1.0"))
+        self.assertIsNone(_parse_request_line(b"GOT / HTTP/1.0"))
 
     def test_parse_request_line_bad_version(self):
-        self.assertIsNone(parse_request_line(b"GET / HTTP/"))
-        self.assertIsNone(parse_request_line(b"GET / HTTP/1"))
-        self.assertIsNone(parse_request_line(b"GET / HTTP/.1"))
+        self.assertIsNone(_parse_request_line(b"GET / HTTP/"))
+        self.assertIsNone(_parse_request_line(b"GET / HTTP/1"))
+        self.assertIsNone(_parse_request_line(b"GET / HTTP/.1"))
 
     def test_parse_request_line_no_target(self):
-        self.assertIsNone(parse_request_line(b"GET HTTP/1.1"))
-        self.assertIsNone(parse_request_line(b"GET  HTTP/1.1"))
+        self.assertIsNone(_parse_request_line(b"GET HTTP/1.1"))
+        self.assertIsNone(_parse_request_line(b"GET  HTTP/1.1"))
 
     def test_parse_request_line_bad_spaces(self):
-        self.assertIsNone(parse_request_line(b"GET /  HTTP/1.1"))
-        self.assertIsNone(parse_request_line(b"GET  / HTTP/1.1"))
+        self.assertIsNone(_parse_request_line(b"GET /  HTTP/1.1"))
+        self.assertIsNone(_parse_request_line(b"GET  / HTTP/1.1"))
 
     def test_parse_request_line_method(self):
-        parsed = parse_request_line(b"GET / HTTP/1.1")
+        parsed = _parse_request_line(b"GET / HTTP/1.1")
         if not parsed:
             raise Exception("None")
         self.assertEqual(parsed["method"], b"GET")
 
     def test_parse_request_line_target(self):
-        parsed = parse_request_line(b"GET /foo HTTP/1.1")
+        parsed = _parse_request_line(b"GET /foo HTTP/1.1")
         if not parsed:
             raise Exception("None")
         self.assertEqual(parsed["target"], b"/foo")
 
     def test_parse_request_line_version(self):
-        parsed = parse_request_line(b"GET / HTTP/1.1")
+        parsed = _parse_request_line(b"GET / HTTP/1.1")
         if not parsed:
             raise Exception("None")
         self.assertEqual(parsed["version"], (1, 1))
@@ -184,7 +152,7 @@ class Utils(unittest.TestCase):
 class ServerParts(unittest.TestCase):
     def testRequestLineEmptyLinesBefore(self):
         req = Request(mockReader(["\n", "\r\n", "GET /?a=a HTTP/1.1"]))
-        asyncio.run(req.read_request_line())
+        asyncio.run(req._read_request_line())
         self.assertEqual(b"GET", req.method)
         self.assertEqual(b"/", req.path)
         self.assertEqual(b"a=a", req.query_string)
@@ -195,21 +163,21 @@ class ServerParts(unittest.TestCase):
         for r in runs:
             with self.assertRaises(HTTPException):
                 req = Request(mockReader(r))
-                asyncio.run(req.read_request_line())
+                asyncio.run(req._read_request_line())
 
     def testHeadersSimple(self):
         req = Request(mockReader([HDR("Host: google.com"), HDRE]))
-        asyncio.run(req.read_headers([b"host"]))
+        asyncio.run(req._read_headers([b"host"]))
         self.assertEqual(req.headers, {b"host": b"google.com"})
 
     def testHeadersSpaces(self):
         req = Request(mockReader([HDR("host:    \t    google.com   \t     "), HDRE]))
-        asyncio.run(req.read_headers([b"host"]))
+        asyncio.run(req._read_headers([b"host"]))
         self.assertEqual(req.headers, {b"host": b"google.com"})
 
     def testHeadersEmptyValue(self):
         req = Request(mockReader([HDR("host:"), HDRE]))
-        asyncio.run(req.read_headers([b"host"]))
+        asyncio.run(req._read_headers([b"host"]))
         self.assertEqual(req.headers, {b"host": b""})
 
     def testHeadersMultiple(self):
@@ -228,7 +196,7 @@ class ServerParts(unittest.TestCase):
             b"junk": b"you    blah",
             b"content-type": b"file",
         }
-        asyncio.run(req.read_headers([b"Host", b"Junk", b"Content-type"]))
+        asyncio.run(req._read_headers([b"Host", b"Junk", b"Content-type"]))
         self.assertEqual(req.headers, hdrs)
 
     def testUrlFinderExplicit(self):
