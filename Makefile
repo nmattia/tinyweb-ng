@@ -4,14 +4,14 @@
 
 DOCKER ?= docker
 OUTDIR ?= ./dist
-SERVER_PY := $(OUTDIR)/tinyweb/server.py
-SERVER_MPY := $(OUTDIR)/tinyweb/server.mpy
+SERVER_PY := $(OUTDIR)/tinyweb.py
+SERVER_MPY := $(OUTDIR)/tinyweb.mpy
 
 build: $(SERVER_MPY) $(SERVER_PY)
 
-$(SERVER_PY): ./tinyweb/server.py
-	mkdir -p $(OUTDIR)/tinyweb
-	strip-hints ./tinyweb/server.py -o $(OUTDIR)/tinyweb/server.py
+$(SERVER_PY): ./tinyweb.py
+	mkdir -p $(OUTDIR)
+	strip-hints ./tinyweb.py -o $(SERVER_PY)
 	@sed -i.bak '/# TYPING_START/,/# TYPING_END/ s/.*//' $(SERVER_PY)
 	@rm -f $(SERVER_PY).bak
 
@@ -26,11 +26,11 @@ test: build container
 	# https://docs.micropython.org/en/latest/unix/quickref.html#envvar-MICROPYPATH
 	$(DOCKER) run --rm \
 		-v ./test:/opt/tinyweb-test \
-		-v $(OUTDIR)/tinyweb:/root/.micropython/lib/tinyweb \
+		-v $(OUTDIR):/remote \
 		tinyweb \
-		micropython /opt/tinyweb-test/unit.py
+		bash -c 'mkdir -p /root/.micropython/lib && cp -r /remote/. /root/.micropython/lib/ && micropython /opt/tinyweb-test/unit.py'
 
-lint: ./tinyweb/server.py
+lint: ./tinyweb.py
 	ruff check
 	mypy
 
