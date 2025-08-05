@@ -2,11 +2,22 @@
 
 A minimal HTTP/1.0 server for tiny devices (ESP32, Raspberry Pi Pico, etc.) running [MicroPython](https://github.com/micropython/micropython) or [CircuitPython](https://github.com/adafruit/circuitpython). Compatible with MicroPython 1.21+.
 
-## Getting Started
+### Table of Contents
 
-### Installation
-
-Please refer to the [HACKING](./HACKING.md) document.
+* [uht](#uht)
+* [Basic Usage](#basic-usage)
+* [Supported Features](#supported-features)
+  * [Limitations](#limitations)
+* [Getting Started](#getting-started)
+  * [Installing mpremote](#installing-mpremote)
+  * [Connecting to WiFi](#connecting-to-wifi)
+  * [Installing uht and starting an HTTP server](#installing-uht-and-starting-an-http-server)
+* [Examples](#examples)
+  * [Basic Hello World](#basic-hello-world)
+  * [Route with Parameter](#route-with-parameter)
+  * [Custom Status Code and Header](#custom-status-code-and-header)
+  * [Catch-All Route](#catch-all-route)
+* [Running in an Async Context](#running-in-an-async-context)
 
 ## Basic Usage
 
@@ -22,6 +33,8 @@ async def index(req, resp):
 app.run()  # Starts the server on 127.0.0.1:8081
 ```
 
+Refer to the [documentation](https://nmattia.github.io/uht/) for all options.
+
 ## Supported Features
 
 * HTTP/1.0 support
@@ -36,6 +49,102 @@ app.run()  # Starts the server on 127.0.0.1:8081
 * Only supports HTTP/1.0
 * No SSL/TLS
 * No built-in static file serving
+
+## Getting Started
+
+This will guide you through the installation of the `uht` library and its dependencies via MicroPython and [`mip`](https://docs.micropython.org/en/latest/reference/packages.html#installing-packages-with-mip).
+
+### Installing mpremote
+
+The simplest way to get a MicroPython console to your microcontroller is to use mpremote. First install `mpremote`:
+
+```bash
+pip install --user mpremote
+```
+
+Then open a MicroPython console:
+
+```bash
+mpremote # will automatically connect to any board that's plugged in and start a repl
+```
+
+### Connecting to WiFi
+
+If you are not seeing the MicroPython repl prompt (`>>>`) you may need to hit `Ctrl-C`.
+
+In the MicroPython repl, set the SSID and password for your WiFi network:
+
+```python
+>>> SSID = "my-ssid" # use value from your network
+>>> PASSWORD = "my-password" # use value from your network
+```
+
+(prompt `>>>` omitted from snippets)
+
+Then activate the WiFi interface (the repl prompt `>>>` is omitted for snippets):
+
+```python
+import network
+
+sta_if = network.WLAN(network.STA_IF)
+sta_if.active(True)
+sta_if.connect(SSID, PASSWORD)
+```
+
+Your board might take a couple of seconds to connect to your WiFi network. You can check the status by calling `sta_if.isconnected()`:
+
+```
+>>> sta_if.isconnected()
+False
+>>> sta_if.isconnected()
+False
+>>> sta_if.isconnected()
+True
+```
+
+Once your board is connected to your WiFi network, look up your board's IP address and write it down.
+
+```
+>>> sta_if.ipconfig('addr4')[0]
+'192.168.1.120'
+```
+
+### Installing uht and starting an HTTP server
+
+Now use `mip` — MicroPython's built-in package manager — to install the `logging` library (dependency of `uht`) and `uht`:
+
+```python
+import mip
+mip.install("logging")
+mip.install("https://github.com/nmattia/uht/releases/latest/download/uht.py")
+```
+
+Finally, start the server:
+
+> [!NOTE]
+>
+> To paste complex snippets, first hit `Ctrl-E` to enter paste mode, paste your snippet, and then hit `Ctrl-D` to exit paste mode.
+
+```python
+import uht
+
+server = uht.HTTPServer()
+
+@server.route("/hello/<name>")
+async def greet(req, resp, name):
+    await resp.send(f"Hello, {name}!\n")
+    await resp.send("Greetings from your board.\n")
+
+server.run()
+```
+
+You should now be able to reach your board from any device connected to your WiFi using the IP address looked up above:
+
+```bash
+$ curl http://192.168.1.120:8080/hello/alice
+Hello, alice!
+Greetings from your board.
+```
 
 ## Examples
 
@@ -62,7 +171,7 @@ Define a dynamic route that greets the user by name:
 ```python
 @app.route("/hello/<name>")
 async def greet(req, resp, name):
-    await resp.send(f"Hello, {name}!".encode())
+    await resp.send("Hello, {name}!")
 ```
 
 The parameter is now echoed in the response:
