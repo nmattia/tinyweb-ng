@@ -1,174 +1,144 @@
 # tinyweb
 
-A simple and lightweight (thus *tiny*) HTTP server for tiny devices (ESP32, Raspberry Pi Pico, etc.) running [MicroPython](https://github.com/micropython/micropython).
+A minimal HTTP/1.0 server for tiny devices (ESP32, Raspberry Pi Pico, etc.) running [MicroPython](https://github.com/micropython/micropython) or [CircuitPython](https://github.com/adafruit/circuitpython). Compatible with MicroPython 1.21+.
 
-Having a simple HTTP server allows developers to create modern UIs for their IoT devices.
-By itself, *tinyweb* is just a simple HTTP server running on top of [`uasyncio`](https://github.com/micropython/micropython-lib/tree/v1.0/uasyncio)—a library for MicroPython. Therefore, *tinyweb* is a single-threaded server.
+## Getting Started
 
-> [!NOTE]
-> This library was forked and adapted from [belyalov/tinyweb](https://github.com/belyalov/tinyweb)
+### Installation
 
-### Features
+Please refer to the [HACKING](./HACKING.md) document.
 
-* Fully asynchronous when used with the [uasyncio](https://github.com/micropython/micropython-lib/tree/v1.0/uasyncio) library for MicroPython.
-* [Flask](http://flask.pocoo.org/) / [Flask-RESTful](https://flask-restful.readthedocs.io/en/latest/)-like API.
-* *Tiny* memory usage—so you can run it on devices like **ESP8266 / ESP32** with only 64K/96K of onboard RAM.
-* Support for serving static content from the filesystem.
-
-### Requirements
-
-* MicroPython 1.25 or newer
-* [`logging`](https://github.com/micropython/micropython-lib/tree/master/python-stdlib/logging)
-
----
-
-#### Hello World
-
-Let's write a [Hello World](https://github.com/nmattia/tinyweb-ng/blob/master/examples/hello_world.py) app from scratch:
+## Basic Usage
 
 ```python
-import tinyweb
+from tinyweb import HTTPServer
 
-# Create the web server application
-app = tinyweb.webserver()
+app = HTTPServer()
 
-# Index page
-@app.route('/')
-async def index(request, response):
-    await response.start_html()  # Start HTTP response with content-type text/html
-    await response.send('<html><body><h1>Hello, world! (<a href="/table">table</a>)</h1></html>
-')
+@app.route("/")
+async def index(req, resp):
+    await resp.send(b"Hello, world!")
 
-# A more complicated page
-@app.route('/table')
-async def table(request, response):
-    await response.start_html()
-    await response.send('<html><body><h1>Simple table</h1>'
-                        '<table border=1 width=400>'
-                        '<tr><td>Name</td><td>Some Value</td></tr>')
-    for i in range(10):
-        await response.send('<tr><td>Name{}</td><td>Value{}</td></tr>'.format(i, i))
-    await response.send('</table></html>')
-
-def run():
-    app.run(host='0.0.0.0', port=8081)
+app.run()  # Starts the server on 127.0.0.1:8081
 ```
 
-Simple? Let’s try it!
-Flash your device with the firmware, open the REPL, and type:
+## Supported Features
 
-```python
->>> import network
-
-# Connect to WiFi
->>> sta_if = network.WLAN(network.STA_IF)
->>> sta_if.active(True)
->>> sta_if.connect('<ssid>', '<password>')
-
-# Run Hello World! :)
->>> import examples.hello_world as hello
->>> hello.run()
-```
-
-That’s it! :)
-Try it by opening: `http://<your ip>:8081`
-
-Like it? Check out more [examples](./examples)!
-
----
+* HTTP/1.0 support
+* Route handling with method-based dispatch
+* Path parameters (`/user/<id>`)
+* Custom response headers
+* Custom status codes and phrases
+* Catch-all handler
 
 ### Limitations
 
-* HTTP protocol support: Due to memory constraints, only **HTTP/1.0** is supported (with the exception of REST API, which uses HTTP/1.1 with `Connection: close`). Support for HTTP/1.1 may be added when the `esp8266` platform is fully deprecated.
+* Only supports HTTP/1.0
+* No SSL/TLS
+* No built-in static file serving
 
----
+## Examples
 
-### Reference
+### Basic Hello World
 
-#### class `webserver`
+Serve a simple "Hello, world!" response on `http://127.0.0.1:8081/`:
 
-Main *tinyweb* app class.
+```python
+from tinyweb import HTTPServer
 
-* `__init__(self, request_timeout=3, max_concurrency=None, backlog=10, debug=False)`
-    * `request_timeout` – Timeout for the client to send a complete HTTP request (excluding body). After that, the connection will be closed. Since `uasyncio` has a small event queue (~42 items), avoid values > 5 to prevent overflow.
-    * `max_concurrency` – Maximum number of concurrent connections. This is important due to memory constraints. Default values: **3** (ESP8266), **6** (ESP32), **10** (others).
-    * `backlog` – Passed to `socket.listen()`. Defines the size of the queue for pending connections. Must be ≥ `max_concurrency`.
-    * `debug` – If `True`, exception text + backtrace will be sent to the client along with HTTP 500.
+app = HTTPServer()
 
-* `add_route(self, url, f, **kwargs)` – Map a `url` to function `f`.
-  Keyword arguments:
-    * `methods` – Allowed HTTP methods (default: `['GET', 'POST']`).
-    * `save_headers` – List of headers to save. To reduce memory usage, specify only what you need (e.g., `'Content-Length'` for POST requests). Default: `[]`.
-    * `max_body_size` – Max HTTP body size (default: `1024`). Be cautious on low-RAM devices like ESP8266.
-    * `allowed_access_control_headers` – Required for CORS (e.g., if sending JSON via XMLHttpRequest). Default: `*`.
-    * `allowed_access_control_origins` – Same as above. Default: `*`.
+@app.route("/")
+async def index(req, resp):
+    await resp.send(b"Hello, world!")
 
-* `@route` – A convenient decorator (inspired by *Flask*). Instead of `add_route()`, use:
-    ```python
-    @app.route('/index.html')
-    async def index(req, resp):
-        await resp.send_file('static/index.simple.html')
-    ```
+app.run()  # Defaults to 127.0.0.1:8081
+```
 
-* `run(self, host="127.0.0.1", port=8081, loop_forever=True, backlog=10)` – Run the web server.
-  * `loop_forever` – If `True`, runs `asyncio.loop_forever()`. Set to `False` if you want to manage the loop yourself.
+### Route with Parameter
 
-* `shutdown(self)` – Gracefully shut down the server. Closes sockets and cancels tasks.
-  **Note**: Make sure it runs in the event loop:
-    ```python
-    async def all_shutdown():
-        await asyncio.sleep_ms(100)
+Define a dynamic route that greets the user by name:
 
-    try:
-        web = tinyweb.webserver()
-        web.run()
-    except KeyboardInterrupt:
-        print('CTRL+C pressed - terminating...')
-        web.shutdown()
-        uasyncio.get_event_loop().run_until_complete(all_shutdown())
-    ```
+```python
+@app.route("/hello/<name>")
+async def greet(req, resp, name):
+    await resp.send(f"Hello, {name}!".encode())
+```
 
----
+The parameter is now echoed in the response:
 
-#### class `request`
+```bash
+$ curl http://127.0.0.1:8081/hello/Alice
+Hello, Alice!
+```
 
-Encapsulates the HTTP request.
+### Custom Status Code and Header
 
-> ⚠️ Note: All strings in `request` are *binary strings* for performance. Always use `b''` notation.
+Custom HTTP status codes and additional response headers can be set as follows:
 
-* `method` – HTTP method (e.g., `b'GET'`)
-* `path` – URL path
-* `query_string` – Query string from the URL
-* `headers` – Dictionary of saved headers (if `save_headers` was used)
-    ```python
-    if b'Content-Length' in self.headers:
-        print(self.headers[b'Content-Length'])
-    ```
+```python
+@app.route("/custom")
+async def custom_response(req, resp):
+    resp.set_status_code(202)
+    resp.set_reason_phrase("Accepted")
+    resp.add_header("X-Custom", "Value")
+    await resp.send(b"Custom response")
+```
 
-* `read_parse_form_data()` – Manually parse form data. Returns a dictionary of key/value pairs.
-  (REST APIs parse automatically.)
+> [!NOTE]
+>
+> The status code and headers must be set before the first call to `send()` otherwise an exception will be thrown!
 
----
+Response:
 
-#### class `response`
+```
+HTTP/1.0 202 Accepted
+X-Custom: Value
+```
 
-Generates HTTP responses.
-Unlike `request`, `response` uses *regular strings*.
+### Catch-All Route
 
-* `code` – HTTP status code (default: `200`)
-* `version` – HTTP version (`1.0` by default; `1.1` is unsupported internally)
-* `headers` – Dictionary of headers
+A catch-all handler can be registered:
 
-Methods:
+```python
+@app.catchall()
+async def not_found(req, resp):
+    resp.set_status_code(404)
+    await resp.send(b"Custom 404 Not Found")
+```
 
-* `add_header(key, value)` – Add a response header
-* `add_access_control_headers()` – Adds CORS headers
-* `redirect(location)` – Coroutine that sends a 302 redirect
-* `start_html()` – Coroutine that starts a response with `Content-Type: text/html`
-* `send(payload)` – Coroutine to send `payload` (string/bytes)
-* `send_file(filename, **kwargs)` – Sends a file from the filesystem
-  Optional args:
-    * `content_type` – MIME type (default: autodetect)
-    * `content_encoding` – e.g., `'gzip'`
-    * `max_age` – Cache lifetime in seconds (default: 30 days; set `0` to disable)
-* `error(code)` – Coroutine that sends an HTTP error with status `code`
+Any request that doesn't match a defined route will now return:
+```
+HTTP/1.0 404
+Custom 404 Not Found
+```
+
+See the [examples](./examples) directory for more.
+
+## Running in an Async Context
+
+If you need to integrate the server with other async code (e.g., background tasks), use the `start()` method instead of `run()`.
+
+### Example:
+
+```python
+from tinyweb import HTTPServer
+import asyncio
+
+app = HTTPServer()
+
+@app.route("/")
+async def index(req, resp):
+    await resp.send(b"Hello from async start")
+
+async def main():
+    server = app.start("0.0.0.0", 8081)
+    print("Server started on port 8081")
+
+    # Optionally do other async tasks here
+    await server.wait_closed()  # Wait until the server shuts down
+
+asyncio.run(main())
+```
+
+This approach gives you more control and allows you to schedule other coroutines alongside the HTTP server.

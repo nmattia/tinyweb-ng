@@ -1,8 +1,8 @@
 #!/usr/bin/env micropython
 """
-Unittests for Tiny Web
+Unittests for tinyweb
 MIT license
-(C) Nicolas Mattia 2025
+(C) Nicolas Mattia 2025 —
 (C) Konstantin Belyalov 2017-2018
 """
 
