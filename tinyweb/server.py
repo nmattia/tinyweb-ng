@@ -185,7 +185,7 @@ def parse_request_line(line: bytes) -> RequestLine | None:
     }
 
 
-class request:
+class Request:
     """HTTP Request class"""
 
     def __init__(self, _reader):
@@ -251,7 +251,7 @@ class request:
                 self.headers[frags[0]] = frags[1].strip()
 
 
-class response:
+class Response:
     """HTTP Response class"""
 
     VERSION = b"1.0"  # we only support 1.0
@@ -314,7 +314,7 @@ class response:
         # https://www.rfc-editor.org/rfc/rfc9112.html#section-4-9
 
         sl = "HTTP/%s %s %s\r\n" % (
-            response.VERSION.decode(),
+            Response.VERSION.decode(),
             self._status_code,
             self._reason_phrase or "",
         )
@@ -474,7 +474,7 @@ class response:
                 raise
 
 
-class webserver:
+class HTTPServer:
     def __init__(self, request_timeout=3, backlog=16, debug=False):
         """Tiny Web Server class.
         Keyword arguments:
@@ -536,8 +536,8 @@ class webserver:
         gc.collect()
 
         try:
-            req = request(reader)
-            resp = response(writer)
+            req = Request(reader)
+            resp = Response(writer)
             await req.read_request_line()
 
             # Find URL handler and parse headers
