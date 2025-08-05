@@ -2,9 +2,11 @@
 
 import gc
 import json
+import errno
 import sys
 import tinyweb
 import logging
+import os
 import network
 
 
@@ -18,13 +20,36 @@ def init_logger(name="root"):
 init_logger("root")
 init_logger("WEB")
 
-server = tinyweb.HTTPServer()
+server = tinyweb.server.HTTPServer()
+
+
+async def html_file_handler(filename, resp):
+    buf = bytearray(512)
+    try:
+        # get file size
+        stat = os.stat(filename)
+        file_len = stat[6]
+        resp.add_header("content-length", str(file_len))
+        resp.add_header("content-type", "text/html")
+
+        with open(filename) as f:
+            while True:
+                size = f.readinto(buf)
+                if size == 0:
+                    break
+                await resp.send(buf[:size])
+    except OSError as e:
+        # special handling for ENOENT / EACCESS
+        if e.args[0] in (errno.ENOENT, errno.EACCES):
+            raise tinyweb.server.HTTPException(404)
+        else:
+            raise
 
 
 @server.route("/", methods=["GET"])
 async def get_index(req, resp):
     """Serve the webapp."""
-    await resp.send_file("/srv/index.html")
+    await html_file_handler("/srv/index.html", resp)
 
 
 @server.route("/info", methods=["GET"])
@@ -33,8 +58,6 @@ async def get_info(req, resp):
     resp.headers[b"content-type"] = b"application/json"
 
     obj = board_data()
-
-    await resp._send_headers()
     await resp.send(json.dumps(obj))
 
 
@@ -50,7 +73,6 @@ async def get_pins(req, resp):
             pin_names.append(pin)
 
     resp.headers[b"content-type"] = b"application/json"
-    await resp._send_headers()
     await resp.send(json.dumps({"pins": pin_names}))
 
 
@@ -64,7 +86,6 @@ async def toggle_pin(req, resp, pin_name):
     pin.toggle()
 
     resp.headers[b"content-type"] = b"application/json"
-    await resp._send_headers()
     await resp.send(json.dumps({}))
 
 
