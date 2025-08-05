@@ -300,12 +300,6 @@ class Response:
 
         self._reason_phrase = value
 
-    async def send(self, content, **kwargs):
-        await self._ensure_ready_for_body()
-
-        self._writer.write(content)
-        await self._writer.drain()
-
     async def _send_status_line(self):
         if self._status_line_sent:
             raise Exception("status line already sent")
@@ -342,51 +336,11 @@ class Response:
         # Collect garbage after small mallocs
         gc.collect()
 
-    async def error(self, code, msg=None):
-        """Generate HTTP error response
-        This function is generator.
+    async def send(self, content, **kwargs):
+        await self._ensure_ready_for_body()
 
-        Arguments:
-            code - HTTP response code
-
-        Example:
-            # Not enough permissions. Send HTTP 403 - Forbidden
-            await resp.error(403)
-        """
-        if self._status_line_sent or self._headers_sent:
-            raise Exception("Status line already sent, cannot set status code")
-
-        self._status_code = code
-        if msg:
-            self.add_header("Content-Length", len(msg))
-
-        await self._send_status_line()
-        await self._send_headers()
-
-        if msg:
-            await self.send(msg)
-
-    async def redirect(self, location, msg=None):
-        """Generate HTTP redirect response to 'location'.
-        Basically it will generate HTTP 302 with 'Location' header
-
-        Arguments:
-            location - URL to redirect to
-
-        Example:
-            # Redirect to /something
-            await resp.redirect('/something')
-        """
-        self._status_code = 302
-        self.add_header("Location", location)
-        if msg:
-            self.add_header("Content-Length", len(msg))
-
-        await self._send_status_line()
-        await self._send_headers()
-
-        if msg:
-            await self.send(msg)
+        self._writer.write(content)
+        await self._writer.drain()
 
     def add_header(self, key, value):
         """Add HTTP response header
@@ -402,16 +356,6 @@ class Response:
             raise Exception("Headers already sent")
 
         self.headers[key] = value
-
-    async def start_html(self):
-        """Start response with HTML content type.
-        This function is generator.
-
-        Example:
-            await resp.start_html()
-            await resp.send('<html><h1>Hello, world!</h1></html>')
-        """
-        self.add_header("Content-Type", "text/html")
 
     async def send_file(
         self,
@@ -448,7 +392,7 @@ class Response:
             self.add_header("Content-Length", str(file_len))
             # Find content type
             if content_type:
-                self.add_header("Content-Type", content_type)
+                self.add_header("content-type", content_type)
             # Add content-encoding, if any
             if content_encoding:
                 self.add_header("Content-Encoding", content_encoding)
@@ -559,17 +503,18 @@ class HTTPServer:
             # Do not send response for connection related errors - too late :)
             # P.S. code 32 - is possible BROKEN PIPE error (TODO: is it true?)
             if e.args[0] not in (errno.ECONNABORTED, errno.ECONNRESET, 32):
+                log.exception(f"Connection error: {e}")
                 try:
-                    await resp.error(500)
+                    resp.set_status_code(500)
+                    await resp._ensure_ready_for_body()
                 except Exception as e:
-                    log.exception(
-                        f"Failed to send 500 error after OSError. Original error: {e}"
-                    )
+                    pass
         except HTTPException as e:
             try:
                 if req.headers is None:
                     await req.read_headers()
-                await resp.error(e.code)
+                resp.set_status_code(e.code)
+                await resp._ensure_ready_for_body()
             except Exception as e:
                 log.exception(
                     f"Failed to send error after HTTPException. Original error: {e}"
@@ -579,7 +524,8 @@ class HTTPServer:
             log.error(req.path.decode())
             log.exception(f"Unhandled exception in user's method. Original error: {e}")
             try:
-                await resp.error(500)
+                resp.set_status_code(500)
+                await resp._ensure_ready_for_body()
             except Exception as e:
                 pass
         finally:

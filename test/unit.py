@@ -363,7 +363,7 @@ server_for_decorators = HTTPServer()
 @server_for_decorators.route("/uid/<user_id>")
 @server_for_decorators.route("/uid2/<user_id>")
 async def route_for_decorator(req, resp, user_id):
-    await resp.start_html()
+    resp.add_header("content-type", "text/html")
     await resp.send("YO, {}".format(user_id))
 
 
@@ -379,7 +379,7 @@ class HTTPServerFull(unittest.TestCase):
         self.data = {}
         self.hello_world_history = (
             "HTTP/1.0 200 \r\n"
-            "Content-Type: text/html\r\n"
+            "content-type: text/html\r\n"
             "\r\n"
             "<html><h1>Hello world</h1></html>"
         )  # fmt: skip
@@ -397,7 +397,7 @@ class HTTPServerFull(unittest.TestCase):
         # Ensure that proper response "sent"
         expected = (
             "HTTP/1.0 200 \r\n"
-            "Content-Type: text/html\r\n"
+            "content-type: text/html\r\n"
             "\r\n"
             "YO, man1"
         )  # fmt: skip
@@ -413,7 +413,7 @@ class HTTPServerFull(unittest.TestCase):
         # Ensure that proper response "sent"
         expected = (
             "HTTP/1.0 200 \r\n"
-            "Content-Type: text/html\r\n"
+            "content-type: text/html\r\n"
             "\r\n"
             "YO, man2"
         )  # fmt: skip
@@ -462,15 +462,15 @@ class HTTPServerFull(unittest.TestCase):
         # Catchall decorator and handler
         @server_for_catchall_decorator.catchall()
         async def route_for_catchall_decorator(req, resp):
-            await resp.start_html()
+            resp.set_status_code(404)
+            resp.set_reason_phrase("NOT FOUND")
             await resp.send("my404")
 
         rdr = mockReader(["GET /this/is/an/invalid/url HTTP/1.1\r\n", HDRE])
         wrt = mockWriter()
         asyncio.run(server_for_catchall_decorator._handle_connection(rdr, wrt))
         expected = (
-            "HTTP/1.0 200 \r\n"
-            "Content-Type: text/html\r\n"
+            "HTTP/1.0 404 NOT FOUND\r\n"
             "\r\n"
             "my404"
         )  # fmt: skip
@@ -484,42 +484,11 @@ class HTTPServerFull(unittest.TestCase):
         self.dummy_called = True
 
     async def hello_world_handler(self, req, resp):
-        await resp.start_html()
+        resp.add_header("content-type", "text/html")
         await resp.send("<html><h1>Hello world</h1></html>")
 
-    async def redirect_handler(self, req, resp):
-        await resp.redirect("/blahblah", msg="msg:)")
-
-    def testStartHTML(self):
-        """Verify that request.start_html() works well"""
-        self.srv.add_route("/", self.hello_world_handler)
-        rdr = mockReader(["GET / HTTP/1.1\r\n", HDR("Host: blah.com"), HDRE])
-        wrt = mockWriter()
-        # "Send" request
-        asyncio.run(self.srv._handle_connection(rdr, wrt))
-        # Ensure that proper response "sent"
-        self.assertHistory(wrt, self.hello_world_history)
-        self.assertTrue(wrt.closed)
-
-    def testRedirect(self):
-        """Verify that request.start_html() works well"""
-        self.srv.add_route("/", self.redirect_handler)
-        rdr = mockReader(["GET / HTTP/1.1\r\n", HDR("Host: blah.com"), HDRE])
-        wrt = mockWriter()
-        # "Send" request
-        asyncio.run(self.srv._handle_connection(rdr, wrt))
-        # Ensure that proper response "sent"
-        expected = (
-            "HTTP/1.0 302 \r\n"
-            "Location: /blahblah\r\n"
-            "Content-Length: 5\r\n"
-            "\r\n"
-            "msg:)"
-        )  # fmt: skip
-        self.assertHistory(wrt, expected)
-
     async def route_parameterized_handler(self, req, resp, user_name):
-        await resp.start_html()
+        resp.add_header("content-type", "text/html")
         await resp.send("<html>Hello, {}</html>".format(user_name))
 
     def testRouteParameterized(self):
@@ -532,7 +501,7 @@ class HTTPServerFull(unittest.TestCase):
         # Ensure that proper response "sent"
         expected = (
             "HTTP/1.0 200 \r\n"
-            "Content-Type: text/html\r\n"
+            "content-type: text/html\r\n"
             "\r\n"
             "<html>Hello, user1</html>"
         )  # fmt: skip
@@ -618,7 +587,7 @@ class HTTPServerFull(unittest.TestCase):
         srv = HTTPServer()
 
         async def hello(req, resp):
-            resp.add_header("Content-Type", "text/plain")
+            resp.add_header("content-type", "text/plain")
             await resp.send("hello")
 
         srv.add_route("/", hello)
@@ -627,7 +596,7 @@ class HTTPServerFull(unittest.TestCase):
         asyncio.run(srv._handle_connection(rdr, wrt))
         expected = (
             "HTTP/1.0 200 \r\n"
-            "Content-Type: text/plain\r\n"
+            "content-type: text/plain\r\n"
             "\r\n"
             "hello"
         )  # fmt: skip
@@ -637,7 +606,7 @@ class HTTPServerFull(unittest.TestCase):
         srv = HTTPServer()
 
         async def echo(req, resp, param):
-            resp.add_header("Content-Type", "text/plain")
+            resp.add_header("content-type", "text/plain")
             await resp.send(param)
 
         srv.add_route("/echo/<param>", echo)
@@ -646,7 +615,7 @@ class HTTPServerFull(unittest.TestCase):
         asyncio.run(srv._handle_connection(rdr, wrt))
         expected = (
             "HTTP/1.0 200 \r\n"
-            "Content-Type: text/plain\r\n"
+            "content-type: text/plain\r\n"
             "\r\n"
             "123"
         )  # fmt: skip
@@ -658,7 +627,7 @@ class HTTPServerFull(unittest.TestCase):
         srv = HTTPServer()
 
         async def get(req, resp):
-            resp.add_header("Content-Type", "text/plain")
+            resp.add_header("content-type", "text/plain")
 
         srv.add_route("/", get)
         asyncio.run(srv._handle_connection(rdr, wrt))
@@ -722,7 +691,7 @@ class StaticContent(unittest.TestCase):
         exp = [
             "HTTP/1.0 200 \r\n",
             "Cache-Control: max-age=100, public\r\n"
-            "Content-Type: text/plain\r\n"
+            "content-type: text/plain\r\n"
             "Content-Length: 21\r\n"
             "Content-Encoding: gzip\r\n\r\n",
             bytearray(b"someContent blah blah"),
