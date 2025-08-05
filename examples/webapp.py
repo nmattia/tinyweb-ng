@@ -4,7 +4,7 @@ import gc
 import json
 import errno
 import sys
-import tinyweb
+import uht
 import logging
 import os
 import network
@@ -20,7 +20,7 @@ def init_logger(name="root"):
 init_logger("root")
 init_logger("WEB")
 
-server = tinyweb.HTTPServer()
+server = uht.HTTPServer()
 
 
 async def html_file_handler(filename, resp):
@@ -41,7 +41,7 @@ async def html_file_handler(filename, resp):
     except OSError as e:
         # special handling for ENOENT / EACCESS
         if e.args[0] in (errno.ENOENT, errno.EACCES):
-            raise tinyweb.HTTPException(404)
+            raise uht.HTTPException(404)
         else:
             raise
 
@@ -133,11 +133,11 @@ def board_data():
 
 def run():
     # Set up AP
-    SSID = "tinyweb"
+    SSID = "uht-demo"
     logging.info(f"creating AP with SSID '{SSID}'")
     ap = network.WLAN(network.AP_IF)
     ap.active(True)
-    ap.config(ssid="tinyweb", security=network.WLAN.SEC_OPEN)
+    ap.config(ssid=SSID, security=network.WLAN.SEC_OPEN)
 
     (ip, _, _, _) = ap.ifconfig()
     logging.info("AP configured: " + ip)

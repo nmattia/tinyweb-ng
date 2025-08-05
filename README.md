@@ -1,4 +1,4 @@
-# tinyweb
+# uht
 
 A minimal HTTP/1.0 server for tiny devices (ESP32, Raspberry Pi Pico, etc.) running [MicroPython](https://github.com/micropython/micropython) or [CircuitPython](https://github.com/adafruit/circuitpython). Compatible with MicroPython 1.21+.
 
@@ -11,7 +11,7 @@ Please refer to the [HACKING](./HACKING.md) document.
 ## Basic Usage
 
 ```python
-from tinyweb import HTTPServer
+from uht import HTTPServer
 
 app = HTTPServer()
 
@@ -44,7 +44,7 @@ app.run()  # Starts the server on 127.0.0.1:8081
 Serve a simple "Hello, world!" response on `http://127.0.0.1:8081/`:
 
 ```python
-from tinyweb import HTTPServer
+from uht import HTTPServer
 
 app = HTTPServer()
 
@@ -122,7 +122,7 @@ If you need to integrate the server with other async code (e.g., background task
 ### Example:
 
 ```python
-from tinyweb import HTTPServer
+from uht import HTTPServer
 import asyncio
 
 app = HTTPServer()
