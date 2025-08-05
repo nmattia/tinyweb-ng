@@ -225,17 +225,6 @@ class Request:
             self.query_string = url_frags[1]
 
     async def read_headers(self, save_headers=[]):
-        """Read and parse HTTP headers until \r\n\r\n:
-        Optional argument 'save_headers' controls which headers to save.
-            This is done mostly to deal with memory constrains.
-
-        Function is generator.
-
-        HTTP headers could be like:
-        Host: google.com
-        Content-Type: blah
-        \r\n
-        """
         self.headers = {}
         while True:
             gc.collect()
@@ -247,7 +236,7 @@ class Request:
                 raise HTTPException(400)
 
             if frags[0].lower() in [header.lower() for header in save_headers]:
-                self.headers[frags[0]] = frags[1].strip()
+                self.headers[frags[0].lower()] = frags[1].strip()
 
 
 class Response:
@@ -354,7 +343,7 @@ class Response:
         if self._headers_sent:
             raise Exception("Headers already sent")
 
-        self.headers[key] = value
+        self.headers[key.lower()] = value
 
 
 class HTTPServer:

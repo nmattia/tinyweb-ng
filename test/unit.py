@@ -199,34 +199,34 @@ class ServerParts(unittest.TestCase):
 
     def testHeadersSimple(self):
         req = Request(mockReader([HDR("Host: google.com"), HDRE]))
-        asyncio.run(req.read_headers([b"Host"]))
-        self.assertEqual(req.headers, {b"Host": b"google.com"})
+        asyncio.run(req.read_headers([b"host"]))
+        self.assertEqual(req.headers, {b"host": b"google.com"})
 
     def testHeadersSpaces(self):
-        req = Request(mockReader([HDR("Host:    \t    google.com   \t     "), HDRE]))
-        asyncio.run(req.read_headers([b"Host"]))
-        self.assertEqual(req.headers, {b"Host": b"google.com"})
+        req = Request(mockReader([HDR("host:    \t    google.com   \t     "), HDRE]))
+        asyncio.run(req.read_headers([b"host"]))
+        self.assertEqual(req.headers, {b"host": b"google.com"})
 
     def testHeadersEmptyValue(self):
-        req = Request(mockReader([HDR("Host:"), HDRE]))
-        asyncio.run(req.read_headers([b"Host"]))
-        self.assertEqual(req.headers, {b"Host": b""})
+        req = Request(mockReader([HDR("host:"), HDRE]))
+        asyncio.run(req.read_headers([b"host"]))
+        self.assertEqual(req.headers, {b"host": b""})
 
     def testHeadersMultiple(self):
         req = Request(
             mockReader(
                 [
-                    HDR("Host: google.com"),
-                    HDR("Junk: you    blah"),
-                    HDR("Content-type:      file"),
+                    HDR("host: google.com"),
+                    HDR("junk: you    blah"),
+                    HDR("content-type:      file"),
                     HDRE,
                 ]
             )
         )
         hdrs = {
-            b"Host": b"google.com",
-            b"Junk": b"you    blah",
-            b"Content-type": b"file",
+            b"host": b"google.com",
+            b"junk": b"you    blah",
+            b"content-type": b"file",
         }
         asyncio.run(req.read_headers([b"Host", b"Junk", b"Content-type"]))
         self.assertEqual(req.headers, hdrs)
@@ -512,13 +512,13 @@ class HTTPServerFull(unittest.TestCase):
 
     def testParseHeadersOnOff(self):
         """Verify parameter parse_headers works"""
-        self.srv.add_route("/", self.dummy_handler, save_headers=["H1", "H2"])
+        self.srv.add_route("/", self.dummy_handler, save_headers=["h1", "h2"])
         rdr = mockReader(
             [
                 "GET / HTTP/1.1\r\n",
-                HDR("H1: blah.com"),
-                HDR("H2: lalalla"),
-                HDR("Junk: fsdfmsdjfgjsdfjunk.com"),
+                HDR("h1: blah.com"),
+                HDR("h2: lalalla"),
+                HDR("junk: fsdfmsdjfgjsdfjunk.com"),
                 HDRE,
             ]
         )
@@ -527,7 +527,7 @@ class HTTPServerFull(unittest.TestCase):
         asyncio.run(self.srv._handle_connection(rdr, wrt))
         self.assertTrue(self.dummy_called)
         # Check for headers - only 2 of 3 should be collected, others - ignore
-        hdrs = {b"H1": b"blah.com", b"H2": b"lalalla"}
+        hdrs = {b"h1": b"blah.com", b"h2": b"lalalla"}
         self.assertEqual(self.dummy_req.headers, hdrs)
         self.assertTrue(wrt.closed)
 
