@@ -63,12 +63,6 @@ Install the `logging` library with the following command:
 mpremote mip install logging
 ```
 
-```bash
-pip3 install mpy-cross==1.25.0.post2
-mpy-cross ./dist/tinyweb/server.py
-mpremote cp ./dist/tinyweb/server.mpy :/lib/tinyweb/server.mpy
-```
-
 ### Install tinyweb
 
 Build the tinyweb server library with the following commands:
@@ -89,7 +83,17 @@ mpremote cp ./examples/static/index.html :/srv/index.html
 mpremote run ./examples/webapp.py
 ```
 
+Run the tests in docker:
+
+```bash
+make test
+```
+
 Run the tests on a board:
+
+> [!NOTE]
+>
+> End-to-end tests fail on the rp2 platform.
 
 ```
 mpremote mip install unittest
