@@ -4,10 +4,7 @@ A minimal HTTP/1.0 server for tiny devices (ESP32, Raspberry Pi Pico, etc.) runn
 
 ### Table of Contents
 
-* [uht](#uht)
 * [Basic Usage](#basic-usage)
-* [Supported Features](#supported-features)
-  * [Limitations](#limitations)
 * [Getting Started](#getting-started)
   * [Installing mpremote](#installing-mpremote)
   * [Connecting to WiFi](#connecting-to-wifi)
@@ -18,6 +15,7 @@ A minimal HTTP/1.0 server for tiny devices (ESP32, Raspberry Pi Pico, etc.) runn
   * [Custom Status Code and Header](#custom-status-code-and-header)
   * [Catch-All Route](#catch-all-route)
 * [Running in an Async Context](#running-in-an-async-context)
+* [About](#about)
 
 ## Basic Usage
 
@@ -249,3 +247,8 @@ asyncio.run(main())
 ```
 
 This approach gives you more control and allows you to schedule other coroutines alongside the HTTP server.
+
+
+## About
+
+The `uht` library started as a fork of [tinyweb](https://github.com/belyalov/tinyweb) by [Konstantin Belyalov](https://github.com/belyalov). Over time the library was pretty much completely rewritten.
